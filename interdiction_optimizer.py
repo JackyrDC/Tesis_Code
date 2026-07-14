@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import multiprocessing as mp
+import queue
+import threading
+import time
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
@@ -9,16 +13,20 @@ import networkx as nx
 import numpy as np
 from matplotlib.animation import FuncAnimation
 from matplotlib.collections import LineCollection
+from matplotlib.widgets import Slider
+from scipy.cluster.hierarchy import fclusterdata
 
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.core.callback import Callback
-from pymoo.core.problem import ElementwiseProblem
+from pymoo.core.problem import Problem
 from pymoo.operators.repair.rounding import RoundingRepair
 from pymoo.indicators.hv import HV
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.operators.sampling.rnd import IntegerRandomSampling
 from pymoo.optimize import minimize
+
+from map_annotations import annotate_pois, annotate_street_names
 
 EdgeUV = tuple[int, int]
 EdgeKey = tuple[int, int, int]
@@ -39,7 +47,7 @@ class CandidateEdge:
         if self.is_bridge and self.flow > 0:
             return "obvia"          # mucho flujo Y sin redundancia
         if self.is_bridge:
-            return "puente_bajo_flujo"   
+            return "puente_bajo_flujo"
         return "alto_flujo_redundante"   # mucho flujo pero con ruta alterna
 
 
@@ -102,8 +110,87 @@ def _build_edge_to_pairs(
     return edge_to_pairs
 
 
-class InterdictionProblem(ElementwiseProblem):
-    """Problema bi-objetivo: maximizar ΔTTV, minimizar cantidad de aristas cortadas."""
+# ── Evaluación de soluciones (compartida por proceso principal y workers) ────
+
+@dataclass
+class _EvalContext:
+    """Datos mínimos que necesita un proceso para evaluar una solución."""
+
+    graph: object
+    od_matrix: np.ndarray
+    travel_times: np.ndarray
+    node_index: dict
+    pool_edges: list[EdgeKey]
+    edge_to_pairs: dict[EdgeUV, set[tuple[int, int]]]
+
+
+def _decode_indices(x, n_pool: int) -> list[int]:
+    """Vector de genes -> índices 1-based distintos del pool (0 = sin corte)."""
+    return sorted({min(int(round(g)), n_pool) for g in x if int(round(g)) > 0})
+
+
+def _evaluate_solution(ctx: _EvalContext, x) -> tuple[float, float]:
+    """
+    Evalúa una solución: (-ΔTTV, #cortes).
+
+    Los pares afectados se agrupan por ORIGEN y se corre un único Dijkstra
+    single-source por origen afectado, en lugar de un Dijkstra por par O-D:
+    con Z zonas el costo por evaluación queda acotado por Z Dijkstras.
+    """
+    idxs = _decode_indices(x, len(ctx.pool_edges))
+    if not idxs:
+        return 0.0, 0.0
+
+    edges_cut = [ctx.pool_edges[i - 1] for i in idxs]
+    cut_uv = {(u, v) for u, v, _ in edges_cut}
+
+    affected: set[tuple[int, int]] = set()
+    for uv in cut_uv:
+        affected |= ctx.edge_to_pairs.get(uv, set())
+    if not affected:
+        return 0.0, float(len(edges_cut))
+
+    by_origin: dict[int, list[int]] = {}
+    for o, d in affected:
+        by_origin.setdefault(o, []).append(d)
+
+    view = nx.restricted_view(ctx.graph, nodes=[], edges=edges_cut)
+    delta = 0.0
+    for o, dests in by_origin.items():
+        lengths = nx.single_source_dijkstra_path_length(view, o, weight="travel_time")
+        i = ctx.node_index[o]
+        for d in dests:
+            j = ctx.node_index[d]
+            demand = ctx.od_matrix[i, j]
+            original_time = ctx.travel_times[i, j]
+            new_time = lengths.get(d, original_time * _PENALTY_MULTIPLIER)
+            delta += demand * max(0.0, new_time - original_time)
+
+    return -delta, float(len(edges_cut))
+
+
+# El contexto (incluido el grafo) se serializa UNA sola vez por worker, vía
+# el initializer del Pool, y queda como global del proceso hijo — así no se
+# re-transfiere el grafo en cada generación ni en cada evaluación.
+_WORKER_CTX: _EvalContext | None = None
+
+
+def _worker_init(ctx: _EvalContext) -> None:
+    global _WORKER_CTX
+    _WORKER_CTX = ctx
+
+
+def _worker_evaluate(x) -> tuple[float, float]:
+    return _evaluate_solution(_WORKER_CTX, x)
+
+
+class InterdictionProblem(Problem):
+    """
+    Problema bi-objetivo (evaluación por lotes): maximizar ΔTTV, minimizar
+    la cantidad de aristas cortadas. Si el optimizador le inyecta un
+    `map` paralelo (ver `set_parallel_map`), la población de cada
+    generación se evalúa repartida entre procesos.
+    """
 
     def __init__(
         self,
@@ -115,52 +202,35 @@ class InterdictionProblem(ElementwiseProblem):
         pool: list[CandidateEdge],
         budget: int = 3,
     ):
-        self.graph = graph
-        self.od_matrix = od_matrix
-        self.travel_times = travel_times
-        self.node_index = {n: i for i, n in enumerate(nodes)}
         self.pool = pool
         self.n_pool = len(pool)
-        self._edge_to_pairs = _build_edge_to_pairs(od_matrix, nodes, paths, pool)
+        self.ctx = _EvalContext(
+            graph=graph,
+            od_matrix=od_matrix,
+            travel_times=travel_times,
+            node_index={n: i for i, n in enumerate(nodes)},
+            pool_edges=[ce.edge for ce in pool],
+            edge_to_pairs=_build_edge_to_pairs(od_matrix, nodes, paths, pool),
+        )
+        self._parallel_map = None
 
-        super().__init__(n_var=budget, n_obj=2, n_constr=0, xl=0, xu=self.n_pool)
+        super().__init__(n_var=budget, n_obj=2, n_ieq_constr=0, xl=0, xu=self.n_pool)
+
+    def set_parallel_map(self, map_fn) -> None:
+        """Inyecta (o retira, con None) el `Pool.map` a usar en _evaluate."""
+        self._parallel_map = map_fn
 
     def _decode(self, x) -> list[CandidateEdge]:
         """Vector de genes -> lista de aristas distintas a cortar (0 = sin corte)."""
-        indices = {min(int(round(gene)), self.n_pool) for gene in x if int(round(gene)) > 0}
-        return [self.pool[i - 1] for i in indices]
+        return [self.pool[i - 1] for i in _decode_indices(x, self.n_pool)]
 
-    def _evaluate(self, x, out, *args, **kwargs):
-        edges_cut = self._decode(x)
-        if not edges_cut:
-            out["F"] = [0.0, 0.0]
-            return
-
-        cut_uv = {(ce.edge[0], ce.edge[1]) for ce in edges_cut}
-        cut_uvk = [ce.edge for ce in edges_cut]
-
-        affected_pairs: set[tuple[int, int]] = set()
-        for uv in cut_uv:
-            affected_pairs |= self._edge_to_pairs.get(uv, set())
-
-        if not affected_pairs:
-            out["F"] = [0.0, float(len(edges_cut))]
-            return
-
-        view = nx.restricted_view(self.graph, nodes=[], edges=cut_uvk)
-
-        delta = 0.0
-        for o, d in affected_pairs:
-            i, j = self.node_index[o], self.node_index[d]
-            demand = self.od_matrix[i, j]
-            original_time = self.travel_times[i, j]
-            try:
-                new_time = nx.shortest_path_length(view, o, d, weight="travel_time")
-            except nx.NetworkXNoPath:
-                new_time = original_time * _PENALTY_MULTIPLIER
-            delta += demand * max(0.0, new_time - original_time)
-
-        out["F"] = [-delta, float(len(edges_cut))]
+    def _evaluate(self, X, out, *args, **kwargs):
+        rows = list(X)
+        if self._parallel_map is not None:
+            F = self._parallel_map(_worker_evaluate, rows)
+        else:
+            F = [_evaluate_solution(self.ctx, x) for x in rows]
+        out["F"] = np.array(F, dtype=float)
 
 
 class GenerationMonitor(Callback):
@@ -184,16 +254,32 @@ class GenerationMonitor(Callback):
         self.history.append({"gen": algorithm.n_gen, "F": F, "X": X, "hv": hv})
 
 
-class LiveMapMonitor(GenerationMonitor):
+class QueueMonitor(GenerationMonitor):
     """
-    Extiende GenerationMonitor para además redibujar en vivo, generación
-    a generación (mientras el NSGA-II todavía está corriendo), el mapa
-    vial con las aristas del frente resaltadas. Necesita los artistas de
-    matplotlib ya creados (LineCollection, título) para actualizarlos in-place.
+    Callback del lado del NSGA-II cuando este corre en un hilo aparte
+    (mapa en vivo): además de guardar el historial, publica cada registro
+    de generación en una cola para que el hilo principal — único dueño de
+    la GUI, matplotlib no es thread-safe — lo consuma y redibuje.
     """
 
-    def __init__(self, ref_point, lc, title, edge_pos, base_colors, base_widths, decode_fn, cmap):
+    def __init__(self, ref_point, records: queue.Queue):
         super().__init__(ref_point)
+        self.records = records
+
+    def notify(self, algorithm):
+        super().notify(algorithm)
+        self.records.put(self.history[-1])
+
+
+class FrontRenderer:
+    """
+    Resalta sobre el mapa vial las aristas del frente de una generación.
+    Debe usarse SOLO desde el hilo principal. Es el dibujante compartido
+    del mapa en vivo, del explorador post-ejecución (`explore_history`)
+    y del replay (`animate_evolution`).
+    """
+
+    def __init__(self, lc, title, edge_pos, base_colors, base_widths, decode_fn, cmap):
         self.lc = lc
         self.title = title
         self.edge_pos = edge_pos
@@ -202,10 +288,7 @@ class LiveMapMonitor(GenerationMonitor):
         self.decode_fn = decode_fn
         self.cmap = cmap
 
-    def notify(self, algorithm):
-        super().notify(algorithm)
-        record = self.history[-1]
-
+    def draw(self, record: dict) -> None:
         colors = self.base_colors.copy()
         widths = self.base_widths.copy()
 
@@ -229,11 +312,7 @@ class LiveMapMonitor(GenerationMonitor):
             f"Interdicción NSGA-II — Generación {record['gen']}  │  "
             f"HV: {record['hv']:.1f}  │  frente: {len(record['X'])} soluciones"
         )
-
-        fig = self.lc.figure
-        fig.canvas.draw_idle()
-        fig.canvas.flush_events()
-        plt.pause(0.001)
+        self.lc.figure.canvas.draw_idle()
 
 
 class InterdictionOptimizer:
@@ -241,6 +320,11 @@ class InterdictionOptimizer:
     Envoltorio de alto nivel: arma el pool de candidatos, define el
     problema y corre NSGA-II para encontrar el Frente de Pareto
     daño-vs-costo de interdicción.
+
+    Con `n_jobs > 1` la evaluación de cada generación se reparte entre
+    procesos (multiprocessing.Pool). IMPORTANTE en Windows: el script que
+    llama a run() debe estar protegido con `if __name__ == "__main__":`,
+    porque cada worker re-importa el módulo principal al arrancar.
     """
 
     def __init__(
@@ -258,7 +342,12 @@ class InterdictionOptimizer:
         seed: int = 42,
         ref_point: tuple[float, float] | None = None,
         live_plot: bool = True,
+        live_update_every: int = 5,
+        n_jobs: int | None = None,
+        pois: list[dict] | None = None,
     ):
+        # POIs {lat, lon, category, name} para anotar los mapas (opcional).
+        self.pois = pois or []
         self.pool = build_candidate_pool(graph, edge_flows, top_n=top_n)
         self.problem = InterdictionProblem(
             graph, od_matrix, travel_times, nodes, paths, self.pool, budget=budget,
@@ -273,18 +362,63 @@ class InterdictionOptimizer:
         self.n_gen = n_gen
         self.seed = seed
         self.live_plot = live_plot
+        self.live_update_every = live_update_every
+        self.n_jobs = n_jobs if n_jobs is not None else max(1, mp.cpu_count() - 1)
         # peor caso posible: cero daño, un corte más de los permitidos —
         # siempre estrictamente dominado por cualquier solución real.
         self.ref_point = ref_point if ref_point is not None else (0.0, float(budget + 1))
         self.monitor = None
         self.result = None
         self.history: list[dict] = []
+        self.elapsed_seconds: float | None = None
 
         self._segments: list | None = None
         self._edge_keys: list | None = None
 
-    def _setup_live_plot(self) -> "LiveMapMonitor":
-        """Arma la figura (una sola vez) que el monitor va a redibujar cada generación."""
+    def _zoom_to_candidates(self, ax, t: float = 0.008, margin: float = 0.30) -> None:
+        """
+        Acerca la vista al mayor clúster de aristas candidatas — sin esto,
+        el autoscale encuadra el municipio completo y la zona de interdicción
+        queda como un punto en el centro del mapa.
+
+        Cada candidata se representa por el punto medio de sus extremos y se
+        agrupa por single-linkage con umbral `t` (en grados: 0.008° ≈ 880 m a
+        la latitud de Comayagua), que equivale a componentes conexas dentro de
+        un radio — así una arteria periférica de alto flujo no arruina el
+        encuadre. `margin` es el margen proporcional alrededor del clúster.
+        """
+        if not self.pool:
+            return
+
+        graph = self.problem.ctx.graph
+        mids = np.array([
+            ((graph.nodes[u]["x"] + graph.nodes[v]["x"]) / 2.0,
+             (graph.nodes[u]["y"] + graph.nodes[v]["y"]) / 2.0)
+            for u, v, _ in (ce.edge for ce in self.pool)
+        ])
+
+        if len(mids) < 2:
+            pts = mids
+        else:
+            labels = fclusterdata(mids, t=t, criterion="distance", method="single")
+            vals, counts = np.unique(labels, return_counts=True)
+            pts = mids[labels == vals[counts.argmax()]]
+
+        xmin, ymin = pts.min(axis=0)
+        xmax, ymax = pts.max(axis=0)
+        # bbox degenerado si el clúster es colineal (una sola calle recta)
+        dx = max(xmax - xmin, 1e-4)
+        dy = max(ymax - ymin, 1e-4)
+        ax.set_xlim(xmin - margin * dx, xmax + margin * dx)
+        ax.set_ylim(ymin - margin * dy, ymax + margin * dy)
+
+    def _base_map_figure(self) -> FrontRenderer:
+        """
+        Construye la figura base (red vial + candidatas en azul + anotaciones
+        + zoom al clúster de interdicción) y devuelve el FrontRenderer que
+        sabe resaltar cualquier frente sobre ella. Compartida por el mapa en
+        vivo, `explore_history` y `animate_evolution`.
+        """
         segments, edge_keys = self._graph_geometry()
         edge_pos = {ek: i for i, ek in enumerate(edge_keys)}
         pool_edges = {ce.edge for ce in self.pool}
@@ -301,7 +435,6 @@ class InterdictionOptimizer:
                 base_colors[i] = (0.20, 0.20, 0.20, 0.5)   # calle común
                 base_widths[i] = 0.4
 
-        plt.ion()
         fig, ax = plt.subplots(figsize=(13, 10), facecolor="#111111")
         ax.set_facecolor("#111111")
         lc = LineCollection(segments, colors=base_colors, linewidths=base_widths, zorder=2)
@@ -309,27 +442,139 @@ class InterdictionOptimizer:
         ax.autoscale()
         ax.set_aspect("equal")
         ax.axis("off")
-        title = ax.set_title("Preparando NSGA-II...", color="white", fontsize=11, pad=10, fontweight="bold")
-        fig.canvas.draw()
-        plt.pause(0.001)
+        self._zoom_to_candidates(ax)
+        annotate_street_names(ax, self.problem.ctx.graph, dark=True)
+        annotate_pois(ax, self.pois, dark=True)
+        title = ax.set_title("", color="white", fontsize=11, pad=10, fontweight="bold")
 
-        return LiveMapMonitor(
-            self.ref_point, lc, title, edge_pos, base_colors, base_widths,
-            self.problem._decode, cmap,
+        return FrontRenderer(
+            lc, title, edge_pos, base_colors, base_widths, self.problem._decode, cmap,
         )
 
     def run(self):
         print(f"Corriendo NSGA-II: pool={len(self.pool)} aristas, "
-              f"presupuesto={self.problem.n_var}, generaciones={self.n_gen}...")
-        self.monitor = self._setup_live_plot() if self.live_plot else GenerationMonitor(self.ref_point)
-        self.result = minimize(
+              f"presupuesto={self.problem.n_var}, generaciones={self.n_gen}, "
+              f"procesos={self.n_jobs}...")
+        records: queue.Queue = queue.Queue()
+        self.monitor = (QueueMonitor(self.ref_point, records) if self.live_plot
+                        else GenerationMonitor(self.ref_point))
+
+        mp_pool = None
+        if self.n_jobs > 1:
+            mp_pool = mp.Pool(self.n_jobs, initializer=_worker_init, initargs=(self.problem.ctx,))
+            self.problem.set_parallel_map(mp_pool.map)
+        start = time.perf_counter()
+        try:
+            if self.live_plot:
+                self.result = self._run_with_live_map(records)
+            else:
+                self.result = self._minimize()
+        finally:
+            if mp_pool is not None:
+                mp_pool.close()
+                mp_pool.join()
+            self.problem.set_parallel_map(None)
+        # Tiempo de pared de la optimización (incluye setup/teardown del Pool).
+        self.elapsed_seconds = time.perf_counter() - start
+
+        self.history = self.monitor.history
+        return self.result
+
+    def _minimize(self):
+        return minimize(
             self.problem, self.algorithm, ("n_gen", self.n_gen),
             seed=self.seed, callback=self.monitor, verbose=True,
         )
-        self.history = self.monitor.history
-        if self.live_plot:
-            plt.ioff()
-        return self.result
+
+    def _run_with_live_map(self, records: queue.Queue):
+        """
+        Corre el NSGA-II en un hilo aparte mientras el hilo principal bombea
+        el event loop de la GUI: el mapa queda navegable (pan/zoom) durante
+        toda la ejecución, no solo en los instantes de redibujado. El pan y
+        el zoom del usuario persisten entre generaciones porque solo se
+        actualizan colores/grosores, nunca los límites de los ejes.
+
+        El hilo del GA pasa la mayor parte del tiempo esperando al Pool de
+        procesos, así que no compite por el GIL con el dibujado.
+        """
+        plt.ion()
+        renderer = self._base_map_figure()
+        renderer.title.set_text("Preparando NSGA-II...")
+        fig = renderer.lc.figure
+        fig.canvas.draw()
+        plt.pause(0.001)
+
+        outcome: dict = {}
+
+        def _optimize():
+            try:
+                outcome["result"] = self._minimize()
+            except BaseException as exc:   # re-lanzada en el hilo principal
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=_optimize, name="nsga2", daemon=True)
+        worker.start()
+
+        latest: dict | None = None
+        drawn_gen = 0
+        while worker.is_alive() or not records.empty():
+            try:
+                while True:                # quedarse solo con el más reciente
+                    latest = records.get_nowait()
+            except queue.Empty:
+                pass
+
+            if not plt.fignum_exists(fig.number):
+                # Ventana cerrada por el usuario: el GA sigue hasta terminar.
+                worker.join(timeout=0.2)
+                continue
+
+            if latest is not None and latest["gen"] > drawn_gen and (
+                latest["gen"] == 1 or latest["gen"] % self.live_update_every == 0
+            ):
+                renderer.draw(latest)
+                drawn_gen = latest["gen"]
+            plt.pause(0.05)                # bombea eventos de la GUI
+
+        worker.join()
+        if "error" in outcome:
+            raise outcome["error"]
+
+        # Garantizar que quede dibujada la generación final.
+        if latest is not None and plt.fignum_exists(fig.number):
+            renderer.draw(latest)
+            plt.pause(0.001)
+        plt.ioff()
+        return outcome["result"]
+
+    def explore_history(self):
+        """
+        Explorador interactivo POST-ejecución: el mismo mapa del frente con
+        un slider para navegar generación a generación, con pan/zoom libres
+        (el algoritmo ya terminó, la GUI no compite con nadie). Bloquea
+        hasta que se cierre la ventana. Requiere haber corrido run().
+        """
+        if not self.history:
+            print("No hay historial de generaciones. Ejecutá run() primero.")
+            return None
+
+        renderer = self._base_map_figure()
+        fig = renderer.lc.figure
+        fig.subplots_adjust(bottom=0.09)
+
+        sax = fig.add_axes([0.18, 0.035, 0.64, 0.03])
+        sax.set_facecolor("#333333")
+        slider = Slider(
+            sax, "Generación", 1, len(self.history),
+            valinit=len(self.history), valstep=1, color="#cc5500",
+        )
+        slider.label.set_color("white")
+        slider.valtext.set_color("white")
+        slider.on_changed(lambda val: renderer.draw(self.history[int(val) - 1]))
+
+        renderer.draw(self.history[-1])
+        plt.show()
+        return slider
 
     def hypervolume(self, ref_point: tuple[float, float] | None = None) -> float:
         """Hipervolumen del frente final — mayor es mejor (más área dominada)."""
@@ -337,6 +582,14 @@ class InterdictionOptimizer:
             raise RuntimeError("Ejecutá run() antes de calcular el hipervolumen.")
         ref = np.array(ref_point, dtype=float) if ref_point is not None else np.array(self.ref_point)
         return HV(ref_point=ref)(self.result.F)
+
+    def save_run(self, base_dir: str = "results", params: dict | None = None) -> str:
+        """
+        Persiste la corrida (CSV del frente por generación, metadata y mapas)
+        en `base_dir/run_<fecha>/`. Devuelve la ruta de la carpeta creada.
+        """
+        from results_exporter import export_run
+        return export_run(self, base_dir=base_dir, params=params)
 
     def edge_criticality_ranking(self) -> list[tuple[EdgeKey, int]]:
         """
@@ -347,7 +600,7 @@ class InterdictionOptimizer:
         if self.result is None:
             raise RuntimeError("Ejecutá run() antes de rankear aristas.")
         counts: dict[EdgeKey, int] = {}
-        for x in self.result.X:
+        for x in np.atleast_2d(self.result.X):
             for ce in self.problem._decode(x):
                 counts[ce.edge] = counts.get(ce.edge, 0) + 1
         return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
@@ -359,7 +612,7 @@ class InterdictionOptimizer:
         if self._segments is not None:
             return self._segments, self._edge_keys
 
-        graph = self.problem.graph
+        graph = self.problem.ctx.graph
         segments, edge_keys = [], []
         for u, v, key, data in graph.edges(keys=True, data=True):
             if "geometry" in data:
@@ -395,61 +648,13 @@ class InterdictionOptimizer:
             print("No hay historial de generaciones. Ejecutá run() primero.")
             return None
 
-        segments, edge_keys = self._graph_geometry()
-        edge_pos = {ek: i for i, ek in enumerate(edge_keys)}
-        pool_edges = {ce.edge for ce in self.pool}
-
-        cmap = plt.colormaps["YlOrRd"]
+        renderer = self._base_map_figure()
+        fig = renderer.lc.figure
         n_frames = len(self.history)
 
-        base_colors = np.zeros((len(segments), 4))
-        base_widths = np.zeros(len(segments))
-        for ek in edge_keys:
-            i = edge_pos[ek]
-            if ek in pool_edges:
-                base_colors[i] = (0.25, 0.45, 0.75, 0.8)   # candidata, no cortada esta gen.
-                base_widths[i] = 1.2
-            else:
-                base_colors[i] = (0.20, 0.20, 0.20, 0.5)   # calle común
-                base_widths[i] = 0.4
-
-        fig, ax = plt.subplots(figsize=(13, 10), facecolor="#111111")
-        ax.set_facecolor("#111111")
-
-        lc = LineCollection(segments, colors=base_colors, linewidths=base_widths, zorder=2)
-        ax.add_collection(lc)
-        ax.autoscale()
-        ax.set_aspect("equal")
-        ax.axis("off")
-
-        title = ax.set_title("", color="white", fontsize=11, pad=10, fontweight="bold")
-
         def update(frame):
-            colors = base_colors.copy()
-            widths = base_widths.copy()
-
-            record = self.history[frame]
-            counts: dict[EdgeKey, int] = {}
-            for x in record["X"]:
-                for ce in self.problem._decode(x):
-                    counts[ce.edge] = counts.get(ce.edge, 0) + 1
-
-            max_count = max(counts.values(), default=1)
-            for edge, count in counts.items():
-                i = edge_pos.get(edge)
-                if i is None:
-                    continue
-                norm = count / max_count
-                colors[i] = cmap(0.3 + 0.7 * norm)
-                widths[i] = 1.5 + 3.0 * norm
-
-            lc.set_colors(colors)
-            lc.set_linewidths(widths)
-            title.set_text(
-                f"Interdicción NSGA-II — Generación {record['gen']}/{n_frames}  │  "
-                f"HV: {record['hv']:.1f}  │  frente: {len(record['X'])} soluciones"
-            )
-            return lc, title
+            renderer.draw(self.history[frame])
+            return renderer.lc, renderer.title
 
         anim = FuncAnimation(
             fig, update, frames=n_frames, interval=interval, blit=False, repeat=False,

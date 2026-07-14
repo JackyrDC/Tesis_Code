@@ -12,6 +12,7 @@ try:
 except ImportError:
     from scipy.spatial import KDTree
 
+from map_annotations import annotate_pois, annotate_street_names
 from neighborhood_data import BARRIOS_COMAYAGUA, TOTAL_POBLACION_URBANA
 
 # Archivo de caché para evitar re-geocodificar en cada ejecución
@@ -95,7 +96,11 @@ def _query_variants(barrio_name: str) -> list[str]:
 
 class ODMatrixBuilder:
     """
-    Construye la matriz Origen-Destino del grafo vial de Comayagua.
+    Construye la matriz Origen-Destino de Comayagua a nivel de ZONA
+    (barrio/colonia): cada zona se representa por un nodo centroide de la
+    red y la matriz es Z×Z (Z ≈ decenas), no nodo-a-nodo (n² ≈ millones).
+    `self.nodes` expone los nodos centroide alineados con la matriz, para
+    que BaselineBuilder / InterdictionOptimizer operen sin cambios de API.
 
     Ponderación híbrida:
       - Componente sociodemográfico: población por barrio/colonia (UNAH 2022).
@@ -145,9 +150,20 @@ class ODMatrixBuilder:
         self.use_poi_attraction = use_poi_attraction
         self.poi_gamma = poi_gamma
 
-        self.nodes = list(self.graph.nodes())
-        self.n = len(self.nodes)
-        self.node_index = {node: i for i, node in enumerate(self.nodes)}
+        self.graph_nodes = list(self.graph.nodes())
+        self.n_graph = len(self.graph_nodes)
+
+        # Unidades O-D a nivel de ZONA (barrio/colonia), no de nodo. Con los
+        # ~4,300 nodos de Comayagua la matriz nodo-a-nodo tiene ~19M pares y
+        # el all-pairs Dijkstra guardando rutas consume ~9 GB de RAM; a nivel
+        # de zona (~decenas) todo el pipeline baja a pocos miles de pares.
+        # Se llenan de forma diferida en _ensure_zones().
+        self.zones: list[str] | None = None            # nombres de zona (filas/cols de la matriz)
+        self.zone_centroid: dict[str, int] | None = None   # zona -> nodo centroide de la red
+        self._zone_nodes: dict[str, list] | None = None    # zona -> nodos asignados
+        self._centroid_nodes: list | None = None       # nodo centroide por zona (orden de self.zones)
+        self.node_index: dict | None = None            # nodo centroide -> índice de fila/columna
+        self.n: int | None = None                      # número de zonas (dimensión de la matriz)
 
         self._weights: np.ndarray | None = None
         self._dest_weights: np.ndarray | None = None
@@ -169,10 +185,16 @@ class ODMatrixBuilder:
         return graph
 
     def _node_latlon(self) -> np.ndarray:
-        """Devuelve array (n, 2) con (lat, lon) de cada nodo."""
+        """Devuelve array (n_graph, 2) con (lat, lon) de cada nodo del grafo."""
         return np.array(
-            [(self.graph.nodes[n]["y"], self.graph.nodes[n]["x"]) for n in self.nodes]
+            [(self.graph.nodes[n]["y"], self.graph.nodes[n]["x"]) for n in self.graph_nodes]
         )
+
+    @property
+    def nodes(self) -> list:
+        """Nodos centroide (uno por zona), alineados con la matriz O-D."""
+        self._ensure_zones()
+        return self._centroid_nodes
 
     # ── Asignación espacial nodo → barrio ───────────────────────────────────────
 
@@ -254,7 +276,12 @@ class ODMatrixBuilder:
     def _load_poi_cache(self) -> list[dict] | None:
         if os.path.exists(_POI_CACHE):
             with open(_POI_CACHE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                pois = json.load(f)
+            # Cachés generados antes de que se guardara el nombre del POI:
+            # se descartan para forzar una re-descarga con nombres.
+            if pois and "name" not in pois[0]:
+                return None
+            return pois
         return None
 
     def _save_poi_cache(self, pois: list[dict]) -> None:
@@ -267,7 +294,8 @@ class ODMatrixBuilder:
         Descarga (o recupera de caché) los puntos de interés relevantes:
         hospitales, clínicas, farmacias, mercados, centros comerciales,
         escuelas, colegios y universidades. Devuelve una lista de dicts
-        {lat, lon, category, weight}.
+        {lat, lon, category, weight, name} (name puede ser None si el POI
+        no tiene nombre en OSM).
         """
         if self._pois is not None:
             return self._pois
@@ -299,11 +327,14 @@ class ODMatrixBuilder:
                 centroid = row.geometry.centroid
             except Exception:
                 continue
+            name = row.get("name")
             pois.append({
                 "lat": float(centroid.y),
                 "lon": float(centroid.x),
                 "category": category,
                 "weight": _POI_ATTRACTION_WEIGHT[category],
+                # row.get("name") devuelve NaN (float) si el POI no tiene tag name
+                "name": name if isinstance(name, str) else None,
             })
 
         self._save_poi_cache(pois)
@@ -311,12 +342,21 @@ class ODMatrixBuilder:
         self._pois = pois
         return self._pois
 
+    def get_pois(self) -> list[dict]:
+        """
+        POIs {lat, lon, category, weight, name} usados por el modelo de
+        atracción — expuestos para que otros mapas (baseline, interdicción,
+        grafo) puedan anotarlos sin re-descargar.
+        """
+        return self._fetch_pois()
+
     def _poi_attraction_weights(self) -> np.ndarray:
         """
-        Peso de atracción por nodo: cada POI se asigna al nodo de red más
-        cercano (árbol KD sobre lat/lon, igual que la asignación de zonas)
-        y aporta el peso de su categoría. Se normaliza para sumar 1.
+        Peso de atracción por ZONA: cada POI se asigna al nodo de red más
+        cercano (árbol KD sobre lat/lon) y aporta el peso de su categoría a
+        la zona de ese nodo. Se normaliza para sumar 1.
         """
+        self._ensure_zones()
         pois = self._fetch_pois()
         weights = np.zeros(self.n)
 
@@ -324,12 +364,16 @@ class ODMatrixBuilder:
             print("Sin POIs disponibles; el destino se ponderará solo por demografía.")
             return weights
 
+        zone_map = self.assign_nodes_to_zones()
+        zone_index = {z: i for i, z in enumerate(self.zones)}
         tree = KDTree(self._node_latlon())
         poi_coords = np.array([(p["lat"], p["lon"]) for p in pois])
         _, idx = tree.query(poi_coords)
 
         for i_node, poi in zip(idx, pois):
-            weights[i_node] += poi["weight"]
+            zone = zone_map.get(self.graph_nodes[i_node])
+            if zone in zone_index:
+                weights[zone_index[zone]] += poi["weight"]
 
         total = weights.sum()
         if total > 0:
@@ -396,14 +440,14 @@ class ODMatrixBuilder:
 
             if osm_to_catalog:
                 print(f"  {len(osm_to_catalog)} barrios con polígono en OSM.")
-                for i, node in enumerate(self.nodes):
+                for i, node in enumerate(self.graph_nodes):
                     pt = SPoint(coords[i][1], coords[i][0])   # (lon, lat)
                     for osm_name, geom in osm_polygons.items():
                         if osm_name in osm_to_catalog and geom.contains(pt):
                             assignments[node] = osm_to_catalog[osm_name]
                             break
                 covered = len(assignments)
-                print(f"  {covered}/{self.n} nodos asignados por polígonos OSM.")
+                print(f"  {covered}/{self.n_graph} nodos asignados por polígonos OSM.")
 
         # ── Paso 2: geocodificación + KD-tree para nodos sin asignar ──────────
         # Voronoi crudo (nodo → centroide más cercano). Se probó una variante
@@ -412,7 +456,7 @@ class ODMatrixBuilder:
         # populosos y aplanando la matriz O-D, con la consecuencia visible de
         # que las concentraciones de flujo en las arterias desaparecían. Volver
         # a Voronoi puro preserva la compactitud geográfica de cada zona.
-        unassigned = [node for node in self.nodes if node not in assignments]
+        unassigned = [node for node in self.graph_nodes if node not in assignments]
         if unassigned:
             print(f"Geocodificando centroides para {len(unassigned)} nodos sin zona...")
             centroids = self._geocode_centroids()
@@ -438,8 +482,47 @@ class ODMatrixBuilder:
 
         self._zone_assignments = assignments
         zones_used = len(set(assignments.values()))
-        print(f"Asignación completada: {len(assignments)}/{self.n} nodos → {zones_used} zonas.")
+        print(f"Asignación completada: {len(assignments)}/{self.n_graph} nodos → {zones_used} zonas.")
         return self._zone_assignments
+
+    # ── Zonificación O-D (unidades de análisis) ─────────────────────────────────
+
+    def _ensure_zones(self) -> None:
+        """
+        Define las unidades O-D: una zona por barrio/colonia con al menos un
+        nodo asignado, representada por un nodo *centroide* de la red (el
+        nodo de la zona más cercano al promedio de coordenadas de sus nodos).
+        """
+        if self.zones is not None:
+            return
+
+        zone_map = self.assign_nodes_to_zones()
+        if not zone_map:
+            raise RuntimeError(
+                "No se pudo asignar ningún nodo a una zona (fallaron los "
+                "polígonos OSM y la geocodificación de centroides); el modelo "
+                "O-D por zonas requiere la asignación nodo→barrio."
+            )
+
+        zone_nodes: dict[str, list] = {}
+        for node, zone in zone_map.items():
+            zone_nodes.setdefault(zone, []).append(node)
+
+        self.zones = sorted(zone_nodes)
+        self._zone_nodes = zone_nodes
+        self.zone_centroid = {}
+        for zone in self.zones:
+            members = zone_nodes[zone]
+            xs = np.array([self.graph.nodes[n]["x"] for n in members])
+            ys = np.array([self.graph.nodes[n]["y"] for n in members])
+            d2 = (xs - xs.mean()) ** 2 + (ys - ys.mean()) ** 2
+            self.zone_centroid[zone] = members[int(np.argmin(d2))]
+
+        self._centroid_nodes = [self.zone_centroid[z] for z in self.zones]
+        self.node_index = {node: i for i, node in enumerate(self._centroid_nodes)}
+        self.n = len(self.zones)
+        print(f"Zonificación O-D: {self.n} zonas (centroides de red) a partir de "
+              f"{len(zone_map)}/{self.n_graph} nodos asignados.")
 
     # ── Mapa de zonas (barrios) ─────────────────────────────────────────────────
 
@@ -449,6 +532,8 @@ class ODMatrixBuilder:
         cmap: str = "gist_ncar",
         label_zones: bool = True,
         label_fontsize: float = 4.5,
+        show_pois: bool = True,
+        show_street_names: bool = True,
     ):
         """
         Mapa intermedio: la ciudad segmentada por barrios/colonias.
@@ -475,7 +560,7 @@ class ODMatrixBuilder:
         zone_color = dict(zip(names, palette))
         default_color = "#cccccc"  # nodos sin zona asignada (no debería ocurrir)
 
-        node_color = [zone_color.get(zone_map.get(n), default_color) for n in self.nodes]
+        node_color = [zone_color.get(zone_map.get(n), default_color) for n in self.graph_nodes]
         edge_color = [
             zone_color.get(zone_map.get(u), default_color)
             for u, _, _ in self.graph.edges(keys=True)
@@ -503,10 +588,23 @@ class ODMatrixBuilder:
                     bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.65),
                 )
 
+        # Centroides de zona (unidades O-D del modelo)
+        if self.zone_centroid:
+            cx = [self.graph.nodes[c]["x"] for c in self.zone_centroid.values()]
+            cy = [self.graph.nodes[c]["y"] for c in self.zone_centroid.values()]
+            ax.scatter(cx, cy, s=42, c="black", marker="*", zorder=4,
+                       label="Centroide de zona (unidad O-D)")
+            ax.legend(loc="lower right", fontsize=8)
+
+        if show_street_names:
+            annotate_street_names(ax, self.graph)
+        if show_pois:
+            annotate_pois(ax, self._fetch_pois())
+
         assigned, total_zones = len(zone_map), len(names)
         ax.set_title(
             f"Comayagua segmentada por barrios/colonias (asignación de nodos)\n"
-            f"{assigned}/{self.n} nodos asignados a {total_zones} zonas",
+            f"{assigned}/{self.n_graph} nodos asignados a {total_zones} zonas",
             fontsize=12,
         )
         plt.tight_layout()
@@ -516,46 +614,26 @@ class ODMatrixBuilder:
     # ── Cómputo de pesos ────────────────────────────────────────────────────────
 
     def _topological_weights(self) -> np.ndarray:
-        """Pesos basados en grado de salida (comportamiento original)."""
-        degrees = np.array([self.graph.out_degree(n) for n in self.nodes], dtype=float)
+        """Peso topológico por zona: suma de grados de salida de sus nodos."""
+        self._ensure_zones()
+        degrees = np.array(
+            [sum(self.graph.out_degree(n) for n in self._zone_nodes[z]) for z in self.zones],
+            dtype=float,
+        )
         total = degrees.sum()
         return degrees / total if total > 0 else np.ones(self.n) / self.n
 
     def _demographic_weights(self) -> np.ndarray:
-        """
-        Pesos demográficos: cada nodo recibe una fracción de la población
-        de su barrio proporcional al número de nodos en ese barrio.
-
-        w_i = P(zona_i) / (|nodos en zona_i| * P_total_urbana)
-        """
-        zone_map = self.assign_nodes_to_zones()
-
-        if not zone_map:
-            print("Sin asignación de zonas; usando pesos topológicos.")
-            return self._topological_weights()
-
-        # Conteo de nodos por zona
-        zone_count: dict[str, int] = {}
-        for zone in zone_map.values():
-            zone_count[zone] = zone_count.get(zone, 0) + 1
-
-        weights = np.zeros(self.n)
-        fallback_weight = 1.0 / self.n  # para nodos sin zona válida
-
-        for i, node in enumerate(self.nodes):
-            zone = zone_map.get(node)
-            if zone and zone in self.population_by_zone:
-                pop = self.population_by_zone[zone]
-                count = zone_count.get(zone, 1)
-                weights[i] = pop / (count * self.total_population)
-            else:
-                weights[i] = fallback_weight
-
-        # Normalizar para que sumen 1
+        """Peso demográfico por zona: fracción de la población urbana total."""
+        self._ensure_zones()
+        weights = np.array(
+            [float(self.population_by_zone.get(z, 0)) for z in self.zones]
+        )
         total = weights.sum()
-        if total > 0:
-            weights /= total
-        return weights
+        if total == 0:
+            print("Sin población conocida por zona; usando pesos topológicos.")
+            return self._topological_weights()
+        return weights / total
 
     def compute_node_weights(self) -> np.ndarray:
         """
@@ -611,20 +689,27 @@ class ODMatrixBuilder:
 
     def compute_travel_times(self) -> np.ndarray:
         """
-        Calcula tiempos mínimos Y caminos mínimos en un único pase all-pairs
-        Dijkstra (las rutas se guardan para reutilizarlas en BaselineBuilder
-        sin recalcular la misma operación costosa dos veces).
+        Calcula tiempos y caminos mínimos SOLO entre centroides de zona.
+
+        En lugar del all-pairs Dijkstra guardando los ~n² caminos entre todos
+        los nodos (≈19M rutas ≈ 9 GB de RAM para Comayagua), se corre un
+        Dijkstra single-source por centroide (~decenas) y se conservan
+        únicamente los tiempos/rutas hacia los demás centroides; el resto se
+        descarta al vuelo.
         """
-        print(f"Calculando caminos mínimos para {self.n} nodos...")
+        self._ensure_zones()
+        centroids = self._centroid_nodes
+        print(f"Calculando caminos mínimos entre {self.n} centroides de zona...")
+
         T = np.full((self.n, self.n), np.inf)
         paths: dict[int, dict[int, list]] = {}
-        for u, (lengths, node_paths) in nx.all_pairs_dijkstra(self.graph, weight="travel_time"):
-            paths[u] = node_paths
-            i = self.node_index[u]
-            for v, length in lengths.items():
-                j = self.node_index.get(v)
-                if j is not None:
-                    T[i, j] = length
+        for i, source in enumerate(centroids):
+            lengths, node_paths = nx.single_source_dijkstra(self.graph, source, weight="travel_time")
+            paths[source] = {d: node_paths[d] for d in centroids if d in node_paths}
+            for dest, j in self.node_index.items():
+                t = lengths.get(dest)
+                if t is not None:
+                    T[i, j] = t
         np.fill_diagonal(T, 0.0)
         self._travel_times = T
         self._paths = paths
@@ -678,18 +763,18 @@ class ODMatrixBuilder:
         return self._od_matrix
 
     def get_dataframe(self) -> pd.DataFrame:
-        return pd.DataFrame(self.get_matrix(), index=self.nodes, columns=self.nodes)
+        return pd.DataFrame(self.get_matrix(), index=self.zones, columns=self.zones)
 
     def get_travel_times_dataframe(self) -> pd.DataFrame:
         if self._travel_times is None:
             self.compute_travel_times()
-        return pd.DataFrame(self._travel_times, index=self.nodes, columns=self.nodes)
+        return pd.DataFrame(self._travel_times, index=self.zones, columns=self.zones)
 
     def get_zone_assignment_series(self) -> pd.Series:
-        """Devuelve Series: node_id → barrio asignado."""
+        """Devuelve Series: node_id → barrio asignado (todos los nodos del grafo)."""
         assignments = self.assign_nodes_to_zones()
         return pd.Series(
-            {n: assignments.get(n, "SIN_ZONA") for n in self.nodes},
+            {n: assignments.get(n, "SIN_ZONA") for n in self.graph_nodes},
             name="barrio",
         )
 
@@ -702,8 +787,8 @@ class ODMatrixBuilder:
         reachable = int(np.sum(np.isfinite(T) & (T > 0)))
         total_possible = self.n * (self.n - 1)
 
-        print("\n--- Resumen Matriz O-D (ponderada) ---")
-        print(f"Nodos en la red:           {self.n}")
+        print("\n--- Resumen Matriz O-D (ponderada, por zonas) ---")
+        print(f"Zonas O-D (barrios):       {self.n}  (red: {self.n_graph} nodos)")
         print(f"Ponderación demográfica:   {'Sí' if self.use_demographics else 'No'}"
               f"  (alpha={self.alpha:.2f})")
         print(f"Población urbana total:    {self.total_population:,} hab.")
@@ -713,21 +798,18 @@ class ODMatrixBuilder:
               f"({100 * reachable / total_possible:.1f}%)")
         print(f"Flujo máximo:              {od.max():.4f}")
         i, j = np.unravel_index(np.argmax(od), od.shape)
-        print(f"  Par de mayor flujo:      {self.nodes[i]} → {self.nodes[j]}")
+        print(f"  Par de mayor flujo:      {self.zones[i]} → {self.zones[j]}")
         print(f"  Tiempo de viaje:         {T[i, j]:.1f} s ({T[i, j] / 60:.1f} min)")
         print(f"Flujo promedio (alcanz.):  {od[od > 0].mean():.6f}")
 
-        # Top 5 barrios por peso demográfico asignado
-        if self.use_demographics and self._zone_assignments:
-            zone_weights: dict[str, float] = {}
-            for i_node, node in enumerate(self.nodes):
-                zone = self._zone_assignments.get(node, "SIN_ZONA")
-                zone_weights[zone] = zone_weights.get(zone, 0.0) + float(self._weights[i_node])
-            top5 = sorted(zone_weights.items(), key=lambda x: x[1], reverse=True)[:5]
-            print("\nTop 5 zonas por peso en la red:")
-            for rank, (zone, w) in enumerate(top5, 1):
+        # Top 5 zonas por peso de origen
+        if self.use_demographics and self._weights is not None:
+            order = np.argsort(self._weights)[::-1][:5]
+            print("\nTop 5 zonas por peso de origen:")
+            for rank, zi in enumerate(order, 1):
+                zone = self.zones[zi]
                 pop = self.population_by_zone.get(zone, 0)
-                print(f"  {rank}. {zone:<35} peso={w:.4f}  (pop={pop:,})")
+                print(f"  {rank}. {zone:<35} peso={self._weights[zi]:.4f}  (pop={pop:,})")
 
         # Resumen de puntos de interés (atracción de destino)
         if self.use_poi_attraction and self._pois:
@@ -739,12 +821,8 @@ class ODMatrixBuilder:
             for cat, count in sorted(by_category.items(), key=lambda x: -x[1]):
                 print(f"  {cat:<20} {count:>4}")
 
-            if self._poi_weights is not None and self._zone_assignments:
-                zone_poi: dict[str, float] = {}
-                for i_node, node in enumerate(self.nodes):
-                    zone = self._zone_assignments.get(node, "SIN_ZONA")
-                    zone_poi[zone] = zone_poi.get(zone, 0.0) + float(self._poi_weights[i_node])
-                top5_poi = sorted(zone_poi.items(), key=lambda x: x[1], reverse=True)[:5]
+            if self._poi_weights is not None:
+                order = np.argsort(self._poi_weights)[::-1][:5]
                 print("\nTop 5 zonas por atracción POI (destino):")
-                for rank, (zone, w) in enumerate(top5_poi, 1):
-                    print(f"  {rank}. {zone:<35} atracción={w:.4f}")
+                for rank, zi in enumerate(order, 1):
+                    print(f"  {rank}. {self.zones[zi]:<35} atracción={self._poi_weights[zi]:.4f}")

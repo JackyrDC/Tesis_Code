@@ -1,6 +1,9 @@
 import osmnx as osm
 import networkx as nw
 import os
+import matplotlib.pyplot as plt
+
+from map_annotations import annotate_pois, annotate_street_names
 
 class GraphConstructor:
     def __init__(self, place_name):
@@ -11,10 +14,31 @@ class GraphConstructor:
         # Descarga el grafo de la ubicación especificada
         self.graph = osm.graph_from_place(self.place_name, network_type='drive', retain_all=False)
         return self.graph
-    
+
     def construct_dirt_graph(self):
         # Descarga el grafo de la ubicación especificada sin filtrar por tipo de carretera
         self.graph = osm.graph_from_place(self.place_name, network_type='all', retain_all=False)
+        return self.graph
+
+    def construct_graph_cached(self, file_path, network_type='drive'):
+        """
+        Carga el grafo desde `file_path` si existe; si no, lo descarga de OSM
+        y lo guarda ahí. Se guarda el grafo CRUDO (sin clean_graph), de modo
+        que el archivo siempre equivale a una descarga fresca — y congela los
+        datos de OSM: ediciones al mapa posteriores no alteran los resultados.
+        """
+        if os.path.exists(file_path):
+            print(f"Grafo '{network_type}' cargado desde caché: {file_path}")
+            return self.load_graph(file_path)
+
+        print(f"Descargando grafo '{network_type}' desde OSM (primera vez)...")
+        if network_type == 'drive':
+            self.construct_graph()
+        else:
+            self.construct_dirt_graph()
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        self.save_graph(file_path)
+        print(f"Grafo guardado en {file_path}")
         return self.graph
 
     def save_graph(self, file_path):
@@ -45,9 +69,16 @@ class GraphConstructor:
         else:
             raise ValueError("Graph has not been constructed yet.")
         
-    def visualize_graph(self):
+    def visualize_graph(self, pois=None, show_street_names=True):
+        # pois: lista {lat, lon, category, name} (p. ej. ODMatrixBuilder.get_pois())
         if self.graph is not None:
-            osm.plot_graph(self.graph)
+            fig, ax = osm.plot_graph(self.graph, show=False, close=False)
+            if show_street_names:
+                # el bgcolor por defecto de osmnx es oscuro (#111111)
+                annotate_street_names(ax, self.graph, dark=True)
+            if pois:
+                annotate_pois(ax, pois, dark=True)
+            plt.show()
         else:
             raise ValueError("Graph has not been constructed yet.")
         

@@ -1,5 +1,3 @@
-
-
 BARRIOS_COMAYAGUA: dict[str, dict] = {
     # ── Barrios históricos ──────────────────────────────────────────────────────
     "BARRIO ABAJO":                  {"poblacion": 5131, "hogares": 1212, "viviendas_ocupadas": 1195, "hacinamiento": 3.90},

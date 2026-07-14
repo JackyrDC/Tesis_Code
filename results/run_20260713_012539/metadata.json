@@ -1,0 +1,40 @@
+{
+  "run_id": "20260713_012539",
+  "timestamp": "2026-07-13T01:25:39",
+  "parametros": {
+    "escenario_poblacion": "central",
+    "anio_objetivo": 2025,
+    "presupuesto_interdiccion": 2,
+    "top_n_candidatos": 100,
+    "poblacion_ga": 100,
+    "generaciones_ga": 50,
+    "semilla": 42,
+    "modal_split": 0.33,
+    "escala_capacidad": 1.0,
+    "fw_max_iter": 50,
+    "poblacion_total": 127195
+  },
+  "resultados": {
+    "hipervolumen_final": 27884204.5876,
+    "num_generaciones": 50,
+    "tamano_frente_final": 6,
+    "tamano_pool_candidatas": 100,
+    "aristas_criticas_top": [
+      {
+        "arista": "1681023824-3391839073-0",
+        "calle": "(sin nombre: 1681023824-3391839073)",
+        "frecuencia_en_frente": 3
+      },
+      {
+        "arista": "2287109250-1681021088-0",
+        "calle": "1a Calle SO",
+        "frecuencia_en_frente": 2
+      },
+      {
+        "arista": "1681021102-1681021088-0",
+        "calle": "1a Avenida SO",
+        "frecuencia_en_frente": 2
+      }
+    ]
+  }
+}

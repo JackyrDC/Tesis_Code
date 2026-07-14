@@ -1,0 +1,30 @@
+{
+  "run_id": "20260713_210423",
+  "timestamp": "2026-07-13T21:04:23",
+  "parametros": {
+    "escenario_poblacion": "alta",
+    "anio_objetivo": 2025,
+    "presupuesto_interdiccion": 1,
+    "top_n_candidatos": 500,
+    "poblacion_ga": 500,
+    "generaciones_ga": 150,
+    "semilla": 42,
+    "modal_split": 0.33,
+    "escala_capacidad": 1.0,
+    "fw_max_iter": 50,
+    "poblacion_total": 130536
+  },
+  "resultados": {
+    "hipervolumen_final": 4301884.4116,
+    "num_generaciones": 150,
+    "tamano_frente_final": 2,
+    "tamano_pool_candidatas": 500,
+    "aristas_criticas_top": [
+      {
+        "arista": "1681023824-3391839073-0",
+        "calle": "(sin nombre: 1681023824-3391839073)",
+        "frecuencia_en_frente": 1
+      }
+    ]
+  }
+}
