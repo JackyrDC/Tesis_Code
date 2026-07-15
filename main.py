@@ -7,16 +7,18 @@ from od_matrix_builder import ODMatrixBuilder
 from baseline_builder import BaselineBuilder
 from population_projector import poblacion_proyectada
 from interdiction_optimizer import InterdictionOptimizer
+from random_failures import run_random_failure_analysis, directed_optimum_by_size
 
-ESCENARIO_POBLACION = "alta"   # "baja" | "central" | "alta"
+ESCENARIO_POBLACION = "central"   # "baja" | "central" | "alta"
 ANIO_OBJETIVO       = 2025
 
-PRESUPUESTO_INTERDICCION = 5      # máximo de aristas a cortar por escenario
-TOP_N_CANDIDATOS         = 500     # tamaño del pool de aristas candidatas
-POBLACION_GA             = 100
-GENERACIONES_GA          = 100
+PRESUPUESTO_INTERDICCION = 2      # máximo de aristas a cortar por escenario
+TOP_N_CANDIDATOS         = 50     # tamaño del pool de aristas candidatas
+POBLACION_GA             = 50
+GENERACIONES_GA          = 30
 PROCESOS_GA              = None   # None = automático (CPUs - 1); 1 = sin multiprocessing
 REFRESCO_MAPA_VIVO       = 5      # redibujar el mapa del NSGA-II cada N generaciones
+MUESTRAS_FALLOS_ALEAT    = 50    # muestras Monte Carlo para el contraste dirigido vs aleatorio
 
 MODAL_SPLIT       = 0.33   # fracción de viajes O-D en vehículo privado
 ESCALA_CAPACIDAD  = 1.0    # calibración de capacidad (ver §calibración); sube/baja el v/c
@@ -110,7 +112,7 @@ def main():
 
     # Persistir resultados ANTES del explorador interactivo, para no depender
     # de que la ventana se cierre correctamente.
-    optimizer.save_run(params={
+    run_dir = optimizer.save_run(params={
         "escenario_poblacion": ESCENARIO_POBLACION,
         "anio_objetivo": ANIO_OBJETIVO,
         "presupuesto_interdiccion": PRESUPUESTO_INTERDICCION,
@@ -123,6 +125,23 @@ def main():
         "fw_max_iter": FW_MAX_ITER,
         "poblacion_total": total_pop,
     })
+
+    # Fase 4 — contraste fallos dirigidos (NSGA-II) vs. aleatorios (Monte Carlo):
+    # cuánto más daño causa un ataque dirigido que una falla fortuita del mismo
+    # tamaño. Se guarda junto al resto de resultados de la corrida.
+    directed = directed_optimum_by_size(optimizer.result)
+    if directed:
+        run_random_failure_analysis(
+            graph,
+            od_builder.get_matrix(),
+            od_builder.get_travel_times_dataframe().values,
+            od_builder.nodes,
+            od_builder.get_paths(),
+            cut_sizes=sorted(directed),
+            n_samples=MUESTRAS_FALLOS_ALEAT,
+            directed_by_size=directed,
+            save_path=os.path.join(run_dir, "random_failures.csv") if run_dir else None,
+        )
 
     # Explorador post-ejecución: mismo mapa con slider para navegar el frente
     # generación a generación (bloquea hasta cerrar la ventana).
