@@ -1,0 +1,57 @@
+{
+  "run_id": "20260715_205538",
+  "timestamp": "2026-07-15T20:55:38",
+  "parametros": {
+    "escenario_poblacion": "central",
+    "anio_objetivo": 2025,
+    "presupuesto_interdiccion": 5,
+    "top_n_candidatos": 150,
+    "poblacion_ga": 50,
+    "generaciones_ga": 50,
+    "semilla": 42,
+    "modal_split": 0.33,
+    "escala_capacidad": 1.0,
+    "fw_max_iter": 50,
+    "poblacion_total": 127195
+  },
+  "resultados": {
+    "tiempo_ejecucion_seg": 1974.376,
+    "tiempo_promedio_por_generacion_seg": 39.488,
+    "hipervolumen_final": 95245206.8255,
+    "num_generaciones": 50,
+    "tamano_frente_final": 46,
+    "tamano_pool_candidatas": 150,
+    "aristas_criticas_top": [
+      {
+        "arista": "1681023824-3391839073-0",
+        "calle": "(sin nombre: 1681023824-3391839073)",
+        "frecuencia_en_frente": 46
+      },
+      {
+        "arista": "2287109250-1681021088-0",
+        "calle": "1a Calle SO",
+        "frecuencia_en_frente": 37
+      },
+      {
+        "arista": "1681021102-1681021088-0",
+        "calle": "1a Avenida SO",
+        "frecuencia_en_frente": 37
+      },
+      {
+        "arista": "12121728925-12121728919-0",
+        "calle": "3a Calle NE, Puente del Barrio Suyapa",
+        "frecuencia_en_frente": 4
+      },
+      {
+        "arista": "5035807331-5035807341-0",
+        "calle": "(sin nombre: 5035807331-5035807341)",
+        "frecuencia_en_frente": 3
+      },
+      {
+        "arista": "3154921857-12121728925-0",
+        "calle": "(sin nombre: 3154921857-12121728925)",
+        "frecuencia_en_frente": 2
+      }
+    ]
+  }
+}
