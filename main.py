@@ -12,10 +12,10 @@ from random_failures import run_random_failure_analysis, directed_optimum_by_siz
 ESCENARIO_POBLACION = "central"   # "baja" | "central" | "alta"
 ANIO_OBJETIVO       = 2025
 
-PRESUPUESTO_INTERDICCION = 2      # máximo de aristas a cortar por escenario
-TOP_N_CANDIDATOS         = 50     # tamaño del pool de aristas candidatas
+PRESUPUESTO_INTERDICCION = 5      # máximo de aristas a cortar por escenario
+TOP_N_CANDIDATOS         = 150     # tamaño del pool de aristas candidatas
 POBLACION_GA             = 50
-GENERACIONES_GA          = 30
+GENERACIONES_GA          = 50
 PROCESOS_GA              = None   # None = automático (CPUs - 1); 1 = sin multiprocessing
 REFRESCO_MAPA_VIVO       = 5      # redibujar el mapa del NSGA-II cada N generaciones
 MUESTRAS_FALLOS_ALEAT    = 50    # muestras Monte Carlo para el contraste dirigido vs aleatorio
