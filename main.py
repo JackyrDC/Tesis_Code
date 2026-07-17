@@ -13,7 +13,7 @@ ESCENARIO_POBLACION = "central"   # "baja" | "central" | "alta"
 ANIO_OBJETIVO       = 2025
 
 PRESUPUESTO_INTERDICCION = 5      # máximo de aristas a cortar por escenario
-TOP_N_CANDIDATOS         = 200     # tamaño del pool de aristas candidatas
+TOP_N_CANDIDATOS         = 100     # tamaño del pool de aristas candidatas
 POBLACION_GA             = 200
 GENERACIONES_GA          = 50
 PROCESOS_GA              = None   # None = automático (CPUs - 1); 1 = sin multiprocessing
@@ -22,7 +22,7 @@ MUESTRAS_FALLOS_ALEAT    = 50    # muestras Monte Carlo para el contraste dirigi
 
 MODAL_SPLIT       = 0.33   # fracción de viajes O-D en vehículo privado
 ESCALA_CAPACIDAD  = 1.0    # calibración de capacidad (ver §calibración); sube/baja el v/c
-FW_MAX_ITER       = 35     # iteraciones máximas de Frank-Wolfe (equilibrio)
+FW_MAX_ITER       = 50     # iteraciones máximas de Frank-Wolfe (equilibrio)
 
 # Caché local del grafo: congela los datos de OSM (reproducibilidad) y evita
 # re-descargar en cada corrida. Borrar los .graphml para forzar re-descarga.
@@ -119,7 +119,7 @@ def main():
         "top_n_candidatos": TOP_N_CANDIDATOS,
         "poblacion_ga": POBLACION_GA,
         "generaciones_ga": GENERACIONES_GA,
-        "semilla": 42,
+        "semilla": 48,
         "modal_split": MODAL_SPLIT,
         "escala_capacidad": ESCALA_CAPACIDAD,
         "fw_max_iter": FW_MAX_ITER,
