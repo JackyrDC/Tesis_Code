@@ -119,7 +119,7 @@ def main():
         "top_n_candidatos": TOP_N_CANDIDATOS,
         "poblacion_ga": POBLACION_GA,
         "generaciones_ga": GENERACIONES_GA,
-        "semilla": 48,
+        "semilla": 46,
         "modal_split": MODAL_SPLIT,
         "escala_capacidad": ESCALA_CAPACIDAD,
         "fw_max_iter": FW_MAX_ITER,
