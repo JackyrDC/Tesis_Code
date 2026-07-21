@@ -1,0 +1,52 @@
+{
+  "run_id": "20260721_170232",
+  "timestamp": "2026-07-21T17:02:32",
+  "parametros": {
+    "escenario_poblacion": "central",
+    "anio_objetivo": 2025,
+    "presupuesto_interdiccion": 5,
+    "top_n_candidatos": 100,
+    "poblacion_ga": 200,
+    "generaciones_ga": 50,
+    "semilla": 30,
+    "modal_split": 0.33,
+    "escala_capacidad": 1.0,
+    "fw_max_iter": 50,
+    "poblacion_total": 127195
+  },
+  "resultados": {
+    "tiempo_ejecucion_seg": 7706.837,
+    "tiempo_promedio_por_generacion_seg": 154.137,
+    "hipervolumen_final": 132223877.0652,
+    "num_generaciones": 50,
+    "tamano_frente_final": 200,
+    "tamano_pool_candidatas": 100,
+    "aristas_criticas_top": [
+      {
+        "arista": "2287109250-1681021088-0",
+        "calle": "1a Calle SO",
+        "frecuencia_en_frente": 196
+      },
+      {
+        "arista": "1681021102-1681021088-0",
+        "calle": "1a Avenida SO",
+        "frecuencia_en_frente": 196
+      },
+      {
+        "arista": "2287106082-2287106085-0",
+        "calle": "5a Avenida SE",
+        "frecuencia_en_frente": 45
+      },
+      {
+        "arista": "2287106082-2347139702-0",
+        "calle": "1a Calle SE",
+        "frecuencia_en_frente": 45
+      },
+      {
+        "arista": "1681023824-3391839073-0",
+        "calle": "(sin nombre: 1681023824-3391839073)",
+        "frecuencia_en_frente": 43
+      }
+    ]
+  }
+}
