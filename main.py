@@ -12,7 +12,7 @@ from random_failures import run_random_failure_analysis, directed_optimum_by_siz
 ESCENARIO_POBLACION = "central"   # "baja" | "central" | "alta"
 ANIO_OBJETIVO       = 2025
 
-SEMILLA = 30                      # semilla única de toda la corrida (GA, muestreos, Monte Carlo)
+SEMILLA = 49                      # semilla única de toda la corrida (GA, muestreos, Monte Carlo)
 
 PRESUPUESTO_INTERDICCION = 5      # máximo de aristas a cortar por escenario
 TOP_N_CANDIDATOS         = 100     # tamaño del pool de aristas candidatas
