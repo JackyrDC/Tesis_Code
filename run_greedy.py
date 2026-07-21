@@ -22,6 +22,15 @@ import json
 import os
 import sys
 
+# La consola de Windows usa cp1252 y revienta al imprimir caracteres como
+# '→' (flecha) que emiten los modulos del pipeline. Forzamos UTF-8 en la
+# salida para que el proceso no aborte con UnicodeEncodeError.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 from graph_handler import GraphConstructor
 from od_matrix_builder import ODMatrixBuilder
 from baseline_builder import BaselineBuilder
