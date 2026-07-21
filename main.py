@@ -12,15 +12,15 @@ from random_failures import run_random_failure_analysis, directed_optimum_by_siz
 ESCENARIO_POBLACION = "central"   # "baja" | "central" | "alta"
 ANIO_OBJETIVO       = 2025
 
-SEMILLA = 49                      # semilla única de toda la corrida (GA, muestreos, Monte Carlo)
+SEMILLA = 3                      # semilla única de toda la corrida (GA, muestreos, Monte Carlo)
 
 PRESUPUESTO_INTERDICCION = 5      # máximo de aristas a cortar por escenario
-TOP_N_CANDIDATOS         = 100     # tamaño del pool de aristas candidatas
-POBLACION_GA             = 200
-GENERACIONES_GA          = 50
+TOP_N_CANDIDATOS         = 10     # tamaño del pool de aristas candidatas
+POBLACION_GA             = 30
+GENERACIONES_GA          = 10
 PROCESOS_GA              = None   # None = automático (CPUs - 1); 1 = sin multiprocessing
 REFRESCO_MAPA_VIVO       = 5      # redibujar el mapa del NSGA-II cada N generaciones
-MUESTRAS_FALLOS_ALEAT    = 50    # muestras Monte Carlo para el contraste dirigido vs aleatorio
+MUESTRAS_FALLOS_ALEAT    = 10    # muestras Monte Carlo para el contraste dirigido vs aleatorio
 
 MODAL_SPLIT       = 0.33   # fracción de viajes O-D en vehículo privado
 ESCALA_CAPACIDAD  = 1.0    # calibración de capacidad (ver §calibración); sube/baja el v/c
