@@ -12,6 +12,8 @@ from random_failures import run_random_failure_analysis, directed_optimum_by_siz
 ESCENARIO_POBLACION = "central"   # "baja" | "central" | "alta"
 ANIO_OBJETIVO       = 2025
 
+SEMILLA = 30                      # semilla única de toda la corrida (GA, muestreos, Monte Carlo)
+
 PRESUPUESTO_INTERDICCION = 5      # máximo de aristas a cortar por escenario
 TOP_N_CANDIDATOS         = 100     # tamaño del pool de aristas candidatas
 POBLACION_GA             = 200
@@ -77,6 +79,7 @@ def main():
         capacity_scale=ESCALA_CAPACIDAD,
         fw_max_iter=FW_MAX_ITER,
         pois=pois,
+        seed=SEMILLA,
     )
 
     # Línea base canónica: equilibrio de usuario (Wardrop) por Frank-Wolfe.
@@ -102,6 +105,7 @@ def main():
         n_jobs=PROCESOS_GA,
         live_update_every=REFRESCO_MAPA_VIVO,
         pois=pois,
+        seed=SEMILLA,
     )
     optimizer.run()
     print(f"\nHipervolumen del frente de Pareto: {optimizer.hypervolume():.2f}")
@@ -119,7 +123,7 @@ def main():
         "top_n_candidatos": TOP_N_CANDIDATOS,
         "poblacion_ga": POBLACION_GA,
         "generaciones_ga": GENERACIONES_GA,
-        "semilla": 46,
+        "semilla": SEMILLA,
         "modal_split": MODAL_SPLIT,
         "escala_capacidad": ESCALA_CAPACIDAD,
         "fw_max_iter": FW_MAX_ITER,
@@ -139,6 +143,7 @@ def main():
             od_builder.get_paths(),
             cut_sizes=sorted(directed),
             n_samples=MUESTRAS_FALLOS_ALEAT,
+            seed=SEMILLA,
             directed_by_size=directed,
             save_path=os.path.join(run_dir, "random_failures.csv") if run_dir else None,
         )

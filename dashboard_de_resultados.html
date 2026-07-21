@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Resultados - Tesis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6.16"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 1.5rem;
+        }
+        .plot-container svg {
+            width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <header class="mb-8 border-b border-slate-200 pb-6">
+        <div class="flex justify-between items-end">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-800">Resultados de Optimización NSGA-II</h1>
+                <p class="text-slate-500 mt-2">Evaluación de Vulnerabilidad en la Red Vial de Comayagua</p>
+            </div>
+            <div class="text-right hidden md:block">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                    Corrida de referencia: run_20260717_194553
+                </span>
+                <p class="text-xs text-slate-400 mt-1">Semilla real 46 (no 42; ver nota de integridad)</p>
+            </div>
+        </div>
+    </header>
+
+    <main class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <div class="space-y-6">
+            <section class="card">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Parámetros del Modelo</h2>
+                <ul class="space-y-3 text-sm">
+                    <li class="flex justify-between"><span class="text-slate-500">Escenario</span> <span class="font-medium">Central (2025)</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Población</span> <span class="font-medium">127,195 hab.</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Presupuesto (K)</span> <span class="font-medium">5 aristas</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Pool de candidatas</span> <span class="font-medium">100 aristas</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Población GA</span> <span class="font-medium">200</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Generaciones</span> <span class="font-medium">50</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Frank-Wolfe Iters</span> <span class="font-medium">50</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Semilla</span> <span class="font-medium">46</span></li>
+                </ul>
+            </section>
+
+            <section class="card bg-blue-50 border border-blue-100">
+                <h2 class="text-xl font-semibold mb-4 text-blue-900 border-b border-blue-200 pb-2">Métricas de Ejecución</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs text-blue-600 uppercase font-semibold">Tiempo Total</p>
+                        <p class="text-2xl font-bold text-blue-900">2.1 <span class="text-sm font-normal">horas</span></p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-blue-600 uppercase font-semibold">Hipervolumen</p>
+                        <p class="text-2xl font-bold text-blue-900">1.32<span class="text-sm font-normal">e8</span></p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-blue-600 uppercase font-semibold">Soluciones</p>
+                        <p class="text-2xl font-bold text-blue-900">200 <span class="text-sm font-normal">en frente</span></p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-blue-600 uppercase font-semibold">T. Promedio/Gen</p>
+                        <p class="text-2xl font-bold text-blue-900">151.2 <span class="text-sm font-normal">s</span></p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card bg-amber-50 border border-amber-200">
+                <h2 class="text-lg font-semibold mb-3 text-amber-900 border-b border-amber-200 pb-2">⚠️ Nota de integridad de datos</h2>
+                <ul class="space-y-2 text-xs text-amber-900 leading-snug list-disc pl-4">
+                    <li>Hay 17 corridas guardadas en <code>results/</code>. De ellas, <strong>run_20260717_172220 y run_20260717_194553 son idénticas byte a byte</strong> pese a declarar semillas distintas (48 y 46) &mdash; no cuentan como dos ejecuciones independientes.</li>
+                    <li>Solo 6 de las 17 corridas incluyen comparación contra voraz y Monte Carlo (<code>greedy_baseline.csv</code> / <code>random_failures.csv</code>); esos módulos se agregaron al pipeline a partir del 15 de julio. Las 11 corridas anteriores solo tienen frente de Pareto.</li>
+                    <li>La estabilidad del frente ante semillas distintas <strong>no está probada formalmente</strong>: no existe un par de corridas con configuración idéntica y semilla genuinamente distinta que sea a la vez independiente y verificada. Queda como trabajo futuro (ver Cap. 10).</li>
+                    <li>El par crítico sí se corrobora, con matices, en 12 corridas exploratorias con configuración y escenario demográfico distintos &mdash; ver panel de convergencia abajo.</li>
+                </ul>
+            </section>
+        </div>
+
+        <div class="md:col-span-2 space-y-6">
+            <section class="card">
+                <div class="flex justify-between items-start mb-2">
+                    <h2 class="text-xl font-semibold">Frente de Pareto vs. Baselines</h2>
+                    <span class="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded font-bold uppercase tracking-wider">Aporte Clave</span>
+                </div>
+                <p class="text-sm text-slate-500 mb-4">Daño (ΔTTV) por tamaño de corte, corrida de referencia. Datos tomados directamente de <code>greedy_baseline.csv</code> y <code>random_failures.csv</code> &mdash; los mismos números de la Tabla de comparación del Capítulo 9.</p>
+
+                <div id="pareto-plot" class="plot-container w-full min-h-[350px]"></div>
+
+                <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <div class="flex gap-3 items-start">
+                        <span class="text-xl">⚠️</span>
+                        <div>
+                            <strong class="text-slate-800 block mb-0.5">Miopía del Algoritmo Greedy</strong>
+                            <p class="text-slate-600 leading-snug">La voraz por flujo empata en el primer corte (285 mil), pero a partir de k=2 queda muy por debajo (23.7M vs igual valor de NSGA-II, pura coincidencia de que ambas encuentran el mismo par). La voraz iterativa acierta el primer corte pero se estanca de ahí en adelante.</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-3 items-start">
+                        <span class="text-xl">🛡️</span>
+                        <div>
+                            <strong class="text-slate-800 block mb-0.5">Resiliencia vs. Fragilidad</strong>
+                            <p class="text-slate-600 leading-snug">El daño medio de las fallas aleatorias (Monte Carlo, 50 muestras) es 2-3 órdenes de magnitud menor que el ataque dirigido en todos los tamaños de corte.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2 class="text-xl font-semibold mb-4">Aristas más críticas (Frecuencia en Frente)</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm text-left text-slate-600">
+                        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 rounded-l-lg">Nombre de la Calle</th>
+                                <th scope="col" class="px-6 py-3">ID Arista</th>
+                                <th scope="col" class="px-6 py-3 text-right rounded-r-lg">Frecuencia (de 200)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="bg-white border-b">
+                                <td class="px-6 py-4 font-medium text-slate-900">1a Calle SO</td>
+                                <td class="px-6 py-4 font-mono text-xs">2287109250-1681021088-0</td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <div class="w-full bg-slate-200 rounded-full h-2.5 max-w-[100px]">
+                                            <div class="bg-red-600 h-2.5 rounded-full" style="width: 98.5%"></div>
+                                        </div>
+                                        <span class="font-bold text-red-600">197</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="bg-white border-b">
+                                <td class="px-6 py-4 font-medium text-slate-900">1a Avenida SO</td>
+                                <td class="px-6 py-4 font-mono text-xs">1681021102-1681021088-0</td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <div class="w-full bg-slate-200 rounded-full h-2.5 max-w-[100px]">
+                                            <div class="bg-red-600 h-2.5 rounded-full" style="width: 98.5%"></div>
+                                        </div>
+                                        <span class="font-bold text-red-600">197</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="bg-white border-b">
+                                <td class="px-6 py-4 font-medium text-slate-900 italic">(sin nombre)</td>
+                                <td class="px-6 py-4 font-mono text-xs">1681023824-3391839073-0</td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <div class="w-full bg-slate-200 rounded-full h-2.5 max-w-[100px]">
+                                            <div class="bg-orange-500 h-2.5 rounded-full" style="width: 23.5%"></div>
+                                        </div>
+                                        <span class="font-bold text-orange-600">47</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="bg-white border-b">
+                                <td class="px-6 py-4 font-medium text-slate-900">5a Avenida SE</td>
+                                <td class="px-6 py-4 font-mono text-xs">2287106082-2287106085-0</td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <div class="w-full bg-slate-200 rounded-full h-2.5 max-w-[100px]">
+                                            <div class="bg-orange-400 h-2.5 rounded-full" style="width: 23%"></div>
+                                        </div>
+                                        <span class="font-bold text-orange-500">46</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="bg-white">
+                                <td class="px-6 py-4 font-medium text-slate-900">1a Calle SE</td>
+                                <td class="px-6 py-4 font-mono text-xs">2287106082-2347139702-0</td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <div class="w-full bg-slate-200 rounded-full h-2.5 max-w-[100px]">
+                                            <div class="bg-orange-400 h-2.5 rounded-full" style="width: 23%"></div>
+                                        </div>
+                                        <span class="font-bold text-orange-500">46</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div class="mt-8 border-t border-slate-200 pt-8">
+        <h2 class="text-2xl font-bold text-slate-800 mb-2">Comparador de corridas</h2>
+        <p class="text-sm text-slate-500 mb-4 max-w-3xl">Elige qué corridas comparar. Se actualizan la tabla y el gráfico de abajo con datos reales de cada <code>metadata.json</code> &mdash; ninguna cifra se interpola ni se simula. Las corridas sin comparación voraz/Monte Carlo (11 de las 17) igual muestran su frente de Pareto.</p>
+
+        <div class="card mb-6">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-sm font-semibold text-slate-700">Corridas (17)</h3>
+                <div class="flex gap-2">
+                    <button id="btn-select-all" class="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">Todas</button>
+                    <button id="btn-select-none" class="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">Ninguna</button>
+                </div>
+            </div>
+            <div id="run-selector" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <section class="card lg:col-span-2 overflow-x-auto">
+                <h3 class="text-lg font-semibold mb-3">Configuración y resultados</h3>
+                <div id="comparison-table"></div>
+            </section>
+            <section class="card lg:col-span-3">
+                <h3 class="text-lg font-semibold mb-3">Mejor daño (ΔTTV) por tamaño de corte, corridas seleccionadas</h3>
+                <div id="compare-plot" class="plot-container w-full min-h-[380px]"></div>
+            </section>
+        </div>
+    </div>
+
+    <div class="mt-8 border-t border-slate-200 pt-8">
+        <h2 class="text-2xl font-bold text-slate-800 mb-2">¿En qué generación colapsa el frente hacia el par crítico?</h2>
+        <p class="text-sm text-slate-500 mb-6 max-w-3xl">Generación en la que la combinación exacta de 2 cortes "1a Calle SO + 1a Avenida SO" aparece por primera vez en el frente no dominado, en las 14 corridas guardadas con presupuesto ≥ 2 (el par no puede aparecer con k=1). Datos extraídos directamente de <code>pareto_front_by_generation.csv</code> de cada corrida &mdash; sin datos simulados.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <section class="card md:col-span-2">
+                <div id="collapse-plot" class="plot-container w-full min-h-[420px]"></div>
+            </section>
+
+            <section class="card bg-slate-50 border border-slate-200">
+                <h3 class="text-lg font-semibold mb-4 text-slate-800 border-b border-slate-200 pb-2">Lectura honesta</h3>
+                <ul class="space-y-4 text-sm text-slate-700">
+                    <li class="flex items-start gap-3">
+                        <span class="text-slate-500 text-xl mt-0.5">👥</span>
+                        <p><strong>El tamaño de población del GA importa más que el número de generaciones.</strong> Las dos únicas corridas con población=10 (<code>231112</code>, <code>001530</code>) nunca encontraron el par, ni con 50 generaciones. Con población≥33 siempre aparece.</p>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-slate-500 text-xl mt-0.5">📉</span>
+                        <p><strong>Pools chicos convergen más rápido, no más lento.</strong> Con <code>topn=5</code> el par exacto aparece en la generación 1; con la config final (<code>topn=100, pop=200</code>) tarda hasta la generación 17. Menos espacio de búsqueda, convergencia más rápida &mdash; es lo esperable, no una anomalía.</p>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-amber-600 text-xl mt-0.5">⚠️</span>
+                        <p><strong>run_172220 y run_194553 son la misma corrida.</strong> Ambas marcan generación 17 porque son un cómputo duplicado, no dos corridas independientes que coincidan.</p>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-slate-500 text-xl mt-0.5">📝</span>
+                        <p><strong>Nota aparte:</strong> el texto del Cap. 9 dice que el par "entra al frente entre las generaciones 5 y 15" &mdash; el escaneo exacto de la corrida de referencia da generación 17. Pendiente de revisar contra la figura <code>evolucion_frente.pdf</code>.</p>
+                    </li>
+                </ul>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        // Datos reales de greedy_baseline.csv y random_failures.csv (run_20260717_194553)
+        const comparisonData = [
+            { cuts: 0, ttv: 0, method: "NSGA-II (dirigido)" },
+            { cuts: 1, ttv: 4190102.66, method: "NSGA-II (dirigido)" },
+            { cuts: 2, ttv: 23748720.28, method: "NSGA-II (dirigido)" },
+            { cuts: 3, ttv: 27938822.94, method: "NSGA-II (dirigido)" },
+            { cuts: 4, ttv: 36301372.37, method: "NSGA-II (dirigido)" },
+            { cuts: 5, ttv: 40044858.81, method: "NSGA-II (dirigido)" },
+
+            { cuts: 0, ttv: 0, method: "Voraz por flujo" },
+            { cuts: 1, ttv: 285078.10, method: "Voraz por flujo" },
+            { cuts: 2, ttv: 23679811.37, method: "Voraz por flujo" },
+            { cuts: 3, ttv: 24095417.82, method: "Voraz por flujo" },
+            { cuts: 4, ttv: 36319003.10, method: "Voraz por flujo" },
+            { cuts: 5, ttv: 36648259.82, method: "Voraz por flujo" },
+
+            { cuts: 0, ttv: 0, method: "Voraz iterativa" },
+            { cuts: 1, ttv: 4204393.22, method: "Voraz iterativa" },
+            { cuts: 2, ttv: 7466202.91, method: "Voraz iterativa" },
+            { cuts: 3, ttv: 8587705.72, method: "Voraz iterativa" },
+            { cuts: 4, ttv: 9899382.89, method: "Voraz iterativa" },
+            { cuts: 5, ttv: 27558435.39, method: "Voraz iterativa" },
+
+            { cuts: 0, ttv: 0, method: "Random (media Monte Carlo)" },
+            { cuts: 1, ttv: 26834.26, method: "Random (media Monte Carlo)" },
+            { cuts: 2, ttv: 36630.28, method: "Random (media Monte Carlo)" },
+            { cuts: 3, ttv: 39220.95, method: "Random (media Monte Carlo)" },
+            { cuts: 4, ttv: 19878.61, method: "Random (media Monte Carlo)" },
+            { cuts: 5, ttv: 68621.75, method: "Random (media Monte Carlo)" }
+        ];
+
+        function renderPlots() {
+            const container = document.getElementById("pareto-plot");
+            container.innerHTML = "";
+
+            const plot = Plot.plot({
+                width: container.clientWidth,
+                height: 350,
+                marginTop: 35,
+                marginRight: 20,
+                marginBottom: 40,
+                marginLeft: 80,
+                grid: true,
+                color: {
+                    domain: ["NSGA-II (dirigido)", "Voraz por flujo", "Voraz iterativa", "Random (media Monte Carlo)"],
+                    range: ["#dc2626", "#ea580c", "#7c3aed", "#94a3b8"],
+                    legend: true
+                },
+                x: {
+                    label: "Número de aristas cortadas →",
+                    domain: [0, 5.5],
+                    ticks: [0,1,2,3,4,5]
+                },
+                y: {
+                    label: "↑ ΔTTV (daño: veh·s adicionales/día)",
+                    tickFormat: d => (d / 1e6).toFixed(1) + "M"
+                },
+                marks: [
+                    Plot.line(comparisonData, {
+                        x: "cuts",
+                        y: "ttv",
+                        stroke: "method",
+                        strokeWidth: 3,
+                        curve: "linear"
+                    }),
+                    Plot.dot(comparisonData, {
+                        x: "cuts",
+                        y: "ttv",
+                        fill: "method",
+                        stroke: "white",
+                        strokeWidth: 1.5,
+                        r: 6
+                    }),
+                    Plot.tip(comparisonData, Plot.pointer({
+                        x: "cuts",
+                        y: "ttv",
+                        title: d => `${d.method}\nCortes: ${d.cuts}\nΔTTV: ${(d.ttv / 1e6).toFixed(2)}M`
+                    }))
+                ]
+            });
+
+            container.appendChild(plot);
+        }
+
+        renderPlots();
+
+        // Generación de primera aparición EXACTA del par "1a Calle SO + 1a Avenida SO",
+        // extraída de pareto_front_by_generation.csv de cada corrida guardada (k >= 2).
+        // "first_exact: null" = el par nunca apareció dentro del presupuesto de generaciones.
+        const collapseData = [
+            { run: "231112", label: "topn=50 pop=10 k=5 (25 gen)", first_exact: null, gens: 25, pop: 10, dup: false },
+            { run: "001530", label: "topn=50 pop=10 k=5 (50 gen)", first_exact: null, gens: 50, pop: 10, dup: false },
+            { run: "012539", label: "topn=100 pop=100 k=2", first_exact: 23, gens: 50, pop: 100, dup: false },
+            { run: "021532", label: "topn=33 pop=33 k=2", first_exact: 8, gens: 50, pop: 33, dup: false },
+            { run: "022130", label: "topn=5 pop=50 k=2", first_exact: 1, gens: 50, pop: 50, dup: false },
+            { run: "224456", label: "topn=500 pop=100 k=2 (100 gen)", first_exact: 24, gens: 100, pop: 100, dup: false },
+            { run: "184255", label: "topn=100 pop=100 k=4", first_exact: 14, gens: 50, pop: 100, dup: false },
+            { run: "225444", label: "topn=250 pop=100 k=4 (100 gen)", first_exact: 31, gens: 100, pop: 100, dup: false },
+            { run: "010552", label: "topn=50 pop=50 k=5 (50 gen)", first_exact: null, gens: 50, pop: 50, dup: false },
+            { run: "015356", label: "topn=50 pop=50 k=5 (30 gen)", first_exact: null, gens: 30, pop: 50, dup: false },
+            { run: "205538", label: "topn=150 pop=50 k=5", first_exact: null, gens: 50, pop: 50, dup: false },
+            { run: "200112", label: "topn=200 pop=200 k=5 (FW=35)", first_exact: 28, gens: 50, pop: 200, dup: false },
+            { run: "172220", label: "topn=100 pop=200 k=5 (= 194553)", first_exact: 17, gens: 50, pop: 200, dup: true },
+            { run: "194553", label: "topn=100 pop=200 k=5 (referencia)", first_exact: 17, gens: 50, pop: 200, dup: true }
+        ];
+
+        function renderCollapsePlot() {
+            const container = document.getElementById("collapse-plot");
+            if (!container) return;
+            container.innerHTML = "";
+
+            const found = collapseData.filter(d => d.first_exact !== null);
+            const never = collapseData.filter(d => d.first_exact === null);
+
+            const plot = Plot.plot({
+                width: container.clientWidth,
+                height: 420,
+                marginLeft: 220,
+                marginRight: 30,
+                grid: true,
+                x: {
+                    label: "Generación de primera aparición exacta del par →",
+                    domain: [0, 35]
+                },
+                y: {
+                    label: null,
+                    domain: collapseData.map(d => d.label)
+                },
+                color: {
+                    label: "Población GA",
+                    type: "linear",
+                    scheme: "blues",
+                    legend: true
+                },
+                marks: [
+                    Plot.ruleX([0]),
+                    Plot.dot(found, {
+                        x: "first_exact",
+                        y: "label",
+                        r: d => d.dup ? 9 : 7,
+                        fill: "pop",
+                        stroke: d => d.dup ? "#dc2626" : "white",
+                        strokeWidth: d => d.dup ? 2 : 1.5,
+                        title: d => `run_${d.run}\nPoblación GA: ${d.pop}\nGeneración: ${d.first_exact}${d.dup ? "\n(duplicado de otra corrida)" : ""}`
+                    }),
+                    Plot.text(never, {
+                        x: 33,
+                        y: "label",
+                        text: d => "nunca (pop=" + d.pop + ")",
+                        fill: "#b91c1c",
+                        fontWeight: 600,
+                        fontSize: 11
+                    })
+                ]
+            });
+
+            container.appendChild(plot);
+        }
+
+        renderCollapsePlot();
+
+        // ------------------------------------------------------------------
+        // Comparador de corridas: datos reales de las 17 corridas guardadas,
+        // extraídos de metadata.json + pareto_front_by_generation.csv
+        // (mejor ΔTTV por num_cortes en la última generación de cada corrida).
+        // ------------------------------------------------------------------
+        const allRuns = [
+            { run: "20260712_231112", seed: 42, k: 5, topn: 50, pop: 10, gens: 25, fw: 45, esc: "central", hv: 22381175.637, front_size: 3, best_by_k: {"3": 1929708.27, "4": 10111235.48, "5": 10340231.89}, first_exact: null, pair_freq: {}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_001530", seed: 42, k: 5, topn: 50, pop: 10, gens: 50, fw: 45, esc: "central", hv: 31610758.6658, front_size: 4, best_by_k: {"2": 1466769.21, "3": 9649012.85, "4": 10111235.48, "5": 10383741.13}, first_exact: null, pair_freq: {}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_003655", seed: 42, k: 1, topn: 100, pop: 100, gens: 50, fw: 50, esc: "central", hv: 4204393.2157, front_size: 2, best_by_k: {"1": 4204393.22}, first_exact: null, pair_freq: {}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_012539", seed: 42, k: 2, topn: 100, pop: 100, gens: 50, fw: 50, esc: "central", hv: 27884204.5876, front_size: 6, best_by_k: {"1": 4204393.22, "2": 23679811.37}, first_exact: 23, pair_freq: {"1a Calle SO": 2, "1a Avenida SO": 2}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_021532", seed: 42, k: 2, topn: 33, pop: 33, gens: 50, fw: 50, esc: "alta", hv: 25426898.0741, front_size: 6, best_by_k: {"1": 1126678.67, "2": 24300219.4}, first_exact: 8, pair_freq: {"1a Calle SO": 2, "1a Avenida SO": 2}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_022130", seed: 42, k: 2, topn: 5, pop: 50, gens: 50, fw: 50, esc: "alta", hv: 24773877.7322, front_size: 6, best_by_k: {"1": 473658.33, "2": 24300219.4}, first_exact: 1, pair_freq: {"1a Calle SO": 2, "1a Avenida SO": 2}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_205500", seed: 42, k: 1, topn: 100, pop: 100, gens: 50, fw: 50, esc: "alta", hv: 4301884.4116, front_size: 2, best_by_k: {"1": 4301884.41}, first_exact: null, pair_freq: {}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_210423", seed: 42, k: 1, topn: 500, pop: 500, gens: 150, fw: 50, esc: "alta", hv: 4301884.4116, front_size: 2, best_by_k: {"1": 4301884.41}, first_exact: null, pair_freq: {}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260713_224456", seed: 42, k: 2, topn: 500, pop: 100, gens: 100, fw: 50, esc: "alta", hv: 28602103.8146, front_size: 6, best_by_k: {"1": 4301884.41, "2": 24300219.4}, first_exact: 24, pair_freq: {"1a Calle SO": 2, "1a Avenida SO": 2}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260714_184255", seed: 42, k: 4, topn: 100, pop: 100, gens: 50, fw: 50, esc: "alta", hv: 94380278.9628, front_size: 100, best_by_k: {"1": 4301884.41, "2": 24300219.4, "3": 28602103.81, "4": 37176071.33}, first_exact: 14, pair_freq: {"1a Calle SO": 91, "1a Avenida SO": 91}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260714_225444", seed: 42, k: 4, topn: 250, pop: 100, gens: 100, fw: 50, esc: "alta", hv: 94380278.9628, front_size: 100, best_by_k: {"1": 4301884.41, "2": 24300219.4, "3": 28602103.81, "4": 37176071.33}, first_exact: 31, pair_freq: {"1a Calle SO": 95, "1a Avenida SO": 95}, has_greedy: false, has_mc: false, dup_of: null },
+            { run: "20260715_010552", seed: 42, k: 5, topn: 50, pop: 50, gens: 50, fw: 50, esc: "central", hv: 79823674.7542, front_size: 36, best_by_k: {"1": 1153001.03, "2": 2232938.22, "3": 24761336.79, "4": 25631351.7, "5": 26045047.0}, first_exact: null, pair_freq: {"1a Calle SO": 28, "1a Avenida SO": 28}, has_greedy: false, has_mc: true, dup_of: null },
+            { run: "20260715_015356", seed: 42, k: 5, topn: 50, pop: 50, gens: 30, fw: 50, esc: "central", hv: 79823674.7542, front_size: 17, best_by_k: {"1": 1153001.03, "2": 2232938.22, "3": 24761336.79, "4": 25631351.7, "5": 26045047.0}, first_exact: null, pair_freq: {"1a Calle SO": 12, "1a Avenida SO": 12}, has_greedy: true, has_mc: true, dup_of: null },
+            { run: "20260715_205538", seed: 42, k: 5, topn: 150, pop: 50, gens: 50, fw: 50, esc: "central", hv: 95245206.8255, front_size: 46, best_by_k: {"1": 4190102.66, "2": 5021942.13, "3": 27938822.94, "4": 29047169.55}, first_exact: null, pair_freq: {"1a Calle SO": 37, "1a Avenida SO": 37}, has_greedy: false, has_mc: true, dup_of: null },
+            { run: "20260716_200112", seed: 42, k: 5, topn: 200, pop: 200, gens: 50, fw: 35, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 28, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: null },
+            { run: "20260717_172220", seed: 48, k: 5, topn: 100, pop: 200, gens: 50, fw: 50, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 17, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: "20260717_194553" },
+            { run: "20260717_194553", seed: 46, k: 5, topn: 100, pop: 200, gens: 50, fw: 50, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 17, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: null }
+        ];
+
+        let selectedRuns = new Set(["20260717_194553", "20260716_200112", "20260713_022130", "20260714_184255"]);
+
+        function fmtM(v) {
+            if (v === undefined || v === null) return "&mdash;";
+            return (v / 1e6).toFixed(2) + "M";
+        }
+
+        function renderRunSelector() {
+            const container = document.getElementById("run-selector");
+            container.innerHTML = "";
+            allRuns.forEach(r => {
+                const on = selectedRuns.has(r.run);
+                const label = document.createElement("label");
+                label.className = "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer select-none transition-colors " +
+                    (on ? "bg-blue-50 border-blue-300 text-blue-800" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300");
+                label.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} class="accent-blue-600" />
+                    <span class="font-mono">${r.run}</span>` +
+                    (r.dup_of ? ` <span class="text-amber-600 font-semibold">dup</span>` : "") +
+                    (!r.has_greedy && !r.has_mc ? ` <span class="text-slate-400">·solo GA</span>` : "");
+                const input = label.querySelector("input");
+                input.addEventListener("change", () => {
+                    if (input.checked) selectedRuns.add(r.run); else selectedRuns.delete(r.run);
+                    renderRunSelector();
+                    renderComparisonTable();
+                    renderComparePlot();
+                });
+                container.appendChild(label);
+            });
+        }
+
+        document.getElementById("btn-select-all").addEventListener("click", () => {
+            allRuns.forEach(r => selectedRuns.add(r.run));
+            renderRunSelector(); renderComparisonTable(); renderComparePlot();
+        });
+        document.getElementById("btn-select-none").addEventListener("click", () => {
+            selectedRuns.clear();
+            renderRunSelector(); renderComparisonTable(); renderComparePlot();
+        });
+
+        function renderComparisonTable() {
+            const container = document.getElementById("comparison-table");
+            const selected = allRuns.filter(r => selectedRuns.has(r.run));
+            if (selected.length === 0) {
+                container.innerHTML = '<p class="text-sm text-slate-400 py-6 text-center">Selecciona al menos una corrida.</p>';
+                return;
+            }
+            const rows = selected.map(r => {
+                const pairMax = Math.max(r.pair_freq["1a Calle SO"] || 0, r.pair_freq["1a Avenida SO"] || 0);
+                const pairTxt = pairMax > 0 ? `${pairMax}/${r.front_size}` : (r.k < 2 ? "n/a (k=1)" : "no en top5");
+                return `<tr class="border-b border-slate-100 ${r.dup_of ? 'bg-amber-50' : ''}">
+                    <td class="py-2 pr-3 font-mono text-xs whitespace-nowrap">${r.run}${r.dup_of ? ' <span class="text-amber-600">⚠</span>' : ''}</td>
+                    <td class="py-2 pr-3 text-center">${r.seed}</td>
+                    <td class="py-2 pr-3 text-center">${r.k}</td>
+                    <td class="py-2 pr-3 text-center">${r.topn}</td>
+                    <td class="py-2 pr-3 text-center">${r.pop}</td>
+                    <td class="py-2 pr-3 text-center">${r.gens}</td>
+                    <td class="py-2 pr-3 text-center">${r.esc}</td>
+                    <td class="py-2 pr-3 text-right whitespace-nowrap">${fmtM(r.hv)}</td>
+                    <td class="py-2 pr-3 text-center">${r.front_size}</td>
+                    <td class="py-2 pr-3 text-center">${r.first_exact ?? (r.k >= 2 ? "nunca" : "n/a")}</td>
+                    <td class="py-2 text-center whitespace-nowrap">${pairTxt}</td>
+                </tr>`;
+            }).join("");
+            container.innerHTML = `<table class="min-w-full text-xs text-left text-slate-600">
+                <thead class="text-[10px] text-slate-500 uppercase border-b border-slate-200">
+                    <tr>
+                        <th class="py-2 pr-3">Corrida</th>
+                        <th class="py-2 pr-3 text-center">Semilla</th>
+                        <th class="py-2 pr-3 text-center">k</th>
+                        <th class="py-2 pr-3 text-center">Pool</th>
+                        <th class="py-2 pr-3 text-center">Pop.</th>
+                        <th class="py-2 pr-3 text-center">Gen.</th>
+                        <th class="py-2 pr-3 text-center">Escen.</th>
+                        <th class="py-2 pr-3 text-right">HV</th>
+                        <th class="py-2 pr-3 text-center">Frente</th>
+                        <th class="py-2 pr-3 text-center">Gen. par exacto</th>
+                        <th class="py-2 text-center">Frec. par</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <p class="text-[11px] text-slate-400 mt-2">⚠ = corrida idéntica a otra ya seleccionada (ver nota de integridad). "n/a (k=1)" = el par no puede aparecer con un solo corte permitido.</p>`;
+        }
+
+        function renderComparePlot() {
+            const container = document.getElementById("compare-plot");
+            if (!container) return;
+            container.innerHTML = "";
+            const selected = allRuns.filter(r => selectedRuns.has(r.run));
+            if (selected.length === 0) {
+                container.innerHTML = '<p class="text-sm text-slate-400 py-16 text-center">Selecciona al menos una corrida para graficar.</p>';
+                return;
+            }
+            const points = [];
+            selected.forEach(r => {
+                Object.entries(r.best_by_k).forEach(([k, ttv]) => {
+                    points.push({ run: r.run, cuts: +k, ttv, dup: !!r.dup_of });
+                });
+            });
+
+            const plot = Plot.plot({
+                width: container.clientWidth,
+                height: 380,
+                marginTop: 20,
+                marginRight: 20,
+                marginBottom: 40,
+                marginLeft: 80,
+                grid: true,
+                color: { legend: true, columns: 1 },
+                x: { label: "Número de aristas cortadas →", domain: [0.5, 5.5], ticks: [1,2,3,4,5] },
+                y: { label: "↑ Mejor ΔTTV por tamaño de corte", tickFormat: d => (d / 1e6).toFixed(1) + "M" },
+                marks: [
+                    Plot.line(points, { x: "cuts", y: "ttv", stroke: "run", strokeWidth: 2.5, curve: "linear" }),
+                    Plot.dot(points, { x: "cuts", y: "ttv", fill: "run", stroke: "white", strokeWidth: 1, r: 5 }),
+                    Plot.tip(points, Plot.pointer({
+                        x: "cuts", y: "ttv",
+                        title: d => `run_${d.run}\nCortes: ${d.cuts}\nΔTTV: ${(d.ttv / 1e6).toFixed(2)}M${d.dup ? "\n(duplicado de otra corrida)" : ""}`
+                    }))
+                ]
+            });
+            container.appendChild(plot);
+        }
+
+        renderRunSelector();
+        renderComparisonTable();
+        renderComparePlot();
+
+        window.addEventListener("resize", () => {
+            requestAnimationFrame(() => {
+                renderPlots();
+                renderCollapsePlot();
+                renderComparePlot();
+            });
+        });
+    </script>
+</body>
+</html>

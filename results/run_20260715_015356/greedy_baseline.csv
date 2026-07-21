@@ -1,0 +1,6 @@
+num_cortes,greedy_flujo,greedy_iterativo,dirigido,ratio_dirigido_vs_greedy_flujo,ratio_dirigido_vs_greedy_iter,calles_greedy_flujo,calles_greedy_iterativo
+1,285078.10,1153001.03,1153001.03,4.04,1.00,1a Calle SO,3a Calle NE
+2,23679811.37,2232938.22,2232938.22,0.09,1.00,1a Calle SO | 1a Avenida SO,3a Calle NE | (sin nombre: 5035807331-5035807341)
+3,24095417.82,2696270.16,24761336.79,1.03,9.18,1a Calle SO | 1a Avenida SO | 5a Avenida SE,3a Calle NE | (sin nombre: 5035807331-5035807341) | 5a Avenida SE
+4,36319003.10,17480478.52,25631351.70,0.71,1.47,1a Calle SO | 1a Avenida SO | 5a Avenida SE | 1a Calle SE,3a Calle NE | (sin nombre: 5035807331-5035807341) | 5a Avenida SE | 1a Calle SE
+5,36648259.82,17867076.04,26045047.00,0.71,1.46,1a Calle SO | 1a Avenida SO | 5a Avenida SE | 1a Calle SE | (sin nombre: 5035807344-5035807334),3a Calle NE | (sin nombre: 5035807331-5035807341) | 5a Avenida SE | 1a Calle SE | Boulevard Cuarto Centenario
