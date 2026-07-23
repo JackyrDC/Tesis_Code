@@ -13,7 +13,7 @@ La tabla comparativa queda en <run>/greedy_baseline.csv, junto al resto
 de resultados de la corrida.
 
 Uso:
-    python run_greedy.py results/run_20260717_194553
+    python run_greedy.py results/run_20260717_172220
     python run_greedy.py                # usa RUN_DIR de abajo
 """
 
@@ -39,7 +39,7 @@ from interdiction_optimizer import build_candidate_pool
 from greedy_baseline import run_greedy_baseline_analysis
 
 # Corrida a analizar: cambiar aquí, o pasarla como primer argumento.
-RUN_DIR = os.path.join(os.path.dirname(__file__), "results", "run_20260717_194553")
+RUN_DIR = os.path.join(os.path.dirname(__file__), "results", "run_20260717_172220")
 
 _CACHE_DIR        = os.path.join(os.path.dirname(__file__), "cache")
 GRAFO_DRIVE_CACHE = os.path.join(_CACHE_DIR, "comayagua_drive.graphml")

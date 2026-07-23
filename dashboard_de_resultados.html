@@ -36,9 +36,9 @@
             </div>
             <div class="text-right hidden md:block">
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                    Corrida de referencia: run_20260717_194553
+                    Corrida de referencia: run_20260717_172220
                 </span>
-                <p class="text-xs text-slate-400 mt-1">Semilla real 46 (no 42; ver nota de integridad)</p>
+                <p class="text-xs text-slate-400 mt-1">Semilla 48. run_20260717_194553 es un duplicado byte-a-byte de esta corrida (mismo pareto_front_by_generation.csv) y ya no se usa; ver nota de integridad</p>
             </div>
         </div>
     </header>
@@ -56,7 +56,7 @@
                     <li class="flex justify-between"><span class="text-slate-500">Población GA</span> <span class="font-medium">200</span></li>
                     <li class="flex justify-between"><span class="text-slate-500">Generaciones</span> <span class="font-medium">50</span></li>
                     <li class="flex justify-between"><span class="text-slate-500">Frank-Wolfe Iters</span> <span class="font-medium">50</span></li>
-                    <li class="flex justify-between"><span class="text-slate-500">Semilla</span> <span class="font-medium">46</span></li>
+                    <li class="flex justify-between"><span class="text-slate-500">Semilla</span> <span class="font-medium">48</span></li>
                 </ul>
             </section>
 
@@ -77,7 +77,7 @@
                     </div>
                     <div>
                         <p class="text-xs text-blue-600 uppercase font-semibold">T. Promedio/Gen</p>
-                        <p class="text-2xl font-bold text-blue-900">151.2 <span class="text-sm font-normal">s</span></p>
+                        <p class="text-2xl font-bold text-blue-900">150.1 <span class="text-sm font-normal">s</span></p>
                     </div>
                 </div>
             </section>
@@ -85,10 +85,10 @@
             <section class="card bg-amber-50 border border-amber-200">
                 <h2 class="text-lg font-semibold mb-3 text-amber-900 border-b border-amber-200 pb-2">⚠️ Nota de integridad de datos</h2>
                 <ul class="space-y-2 text-xs text-amber-900 leading-snug list-disc pl-4">
-                    <li>Hay 17 corridas guardadas en <code>results/</code>. De ellas, <strong>run_20260717_172220 y run_20260717_194553 son idénticas byte a byte</strong> pese a declarar semillas distintas (48 y 46) &mdash; no cuentan como dos ejecuciones independientes.</li>
-                    <li>Solo 6 de las 17 corridas incluyen comparación contra voraz y Monte Carlo (<code>greedy_baseline.csv</code> / <code>random_failures.csv</code>); esos módulos se agregaron al pipeline a partir del 15 de julio. Las 11 corridas anteriores solo tienen frente de Pareto.</li>
-                    <li>La estabilidad del frente ante semillas distintas <strong>no está probada formalmente</strong>: no existe un par de corridas con configuración idéntica y semilla genuinamente distinta que sea a la vez independiente y verificada. Queda como trabajo futuro (ver Cap. 10).</li>
-                    <li>El par crítico sí se corrobora, con matices, en 12 corridas exploratorias con configuración y escenario demográfico distintos &mdash; ver panel de convergencia abajo.</li>
+                    <li>Hay 16 corridas guardadas en <code>results/</code>. <code>run_20260717_194553</code> se excluyó del análisis: fue un error de configuración del script al correrlo en el servidor, que repitió byte a byte el resultado de <code>run_20260717_172220</code> (mismo <code>pareto_front_by_generation.csv</code>) bajo una semilla declarada distinta. <strong>run_20260717_172220 (semilla 48) es la corrida de referencia.</strong></li>
+                    <li>Solo 5 de las 16 corridas incluyen comparación contra voraz y Monte Carlo (<code>greedy_baseline.csv</code> / <code>random_failures.csv</code>); esos módulos se agregaron al pipeline a partir del 15 de julio.</li>
+                    <li>La estabilidad del frente ante semillas distintas <strong>sí se verificó</strong> (2026-07-21): con 4 semillas genuinamente independientes en la config de referencia (30, 48, 49, y 42 con pool de 200) el hipervolumen final converge al mismo valor en las 4, entre la generación 18 y 30 de 50. Ver <code>results/comparacion_semillas/convergencia_hv_por_semilla.png</code>.</li>
+                    <li>El par crítico ("1a Calle SO" + "1a Avenida SO") se corrobora en las 4 semillas independientes (~197/200, ver <code>aristas_criticas_por_semilla.png</code>) y, con matices, en corridas exploratorias con configuración y escenario demográfico distintos &mdash; ver panel de convergencia abajo.</li>
                 </ul>
             </section>
         </div>
@@ -202,11 +202,11 @@
 
     <div class="mt-8 border-t border-slate-200 pt-8">
         <h2 class="text-2xl font-bold text-slate-800 mb-2">Comparador de corridas</h2>
-        <p class="text-sm text-slate-500 mb-4 max-w-3xl">Elige qué corridas comparar. Se actualizan la tabla y el gráfico de abajo con datos reales de cada <code>metadata.json</code> &mdash; ninguna cifra se interpola ni se simula. Las corridas sin comparación voraz/Monte Carlo (11 de las 17) igual muestran su frente de Pareto.</p>
+        <p class="text-sm text-slate-500 mb-4 max-w-3xl">Elige qué corridas comparar. Se actualizan la tabla y el gráfico de abajo con datos reales de cada <code>metadata.json</code> &mdash; ninguna cifra se interpola ni se simula. Las corridas sin comparación voraz/Monte Carlo (11 de las 16) igual muestran su frente de Pareto.</p>
 
         <div class="card mb-6">
             <div class="flex justify-between items-center mb-3">
-                <h3 class="text-sm font-semibold text-slate-700">Corridas (17)</h3>
+                <h3 class="text-sm font-semibold text-slate-700">Corridas (16)</h3>
                 <div class="flex gap-2">
                     <button id="btn-select-all" class="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">Todas</button>
                     <button id="btn-select-none" class="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">Ninguna</button>
@@ -229,7 +229,7 @@
 
     <div class="mt-8 border-t border-slate-200 pt-8">
         <h2 class="text-2xl font-bold text-slate-800 mb-2">¿En qué generación colapsa el frente hacia el par crítico?</h2>
-        <p class="text-sm text-slate-500 mb-6 max-w-3xl">Generación en la que la combinación exacta de 2 cortes "1a Calle SO + 1a Avenida SO" aparece por primera vez en el frente no dominado, en las 14 corridas guardadas con presupuesto ≥ 2 (el par no puede aparecer con k=1). Datos extraídos directamente de <code>pareto_front_by_generation.csv</code> de cada corrida &mdash; sin datos simulados.</p>
+        <p class="text-sm text-slate-500 mb-6 max-w-3xl">Generación en la que la combinación exacta de 2 cortes "1a Calle SO + 1a Avenida SO" aparece por primera vez en el frente no dominado, en las 13 corridas guardadas con presupuesto ≥ 2 (el par no puede aparecer con k=1). Datos extraídos directamente de <code>pareto_front_by_generation.csv</code> de cada corrida &mdash; sin datos simulados.</p>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <section class="card md:col-span-2">
                 <div id="collapse-plot" class="plot-container w-full min-h-[420px]"></div>
@@ -248,7 +248,7 @@
                     </li>
                     <li class="flex items-start gap-3">
                         <span class="text-amber-600 text-xl mt-0.5">⚠️</span>
-                        <p><strong>run_172220 y run_194553 son la misma corrida.</strong> Ambas marcan generación 17 porque son un cómputo duplicado, no dos corridas independientes que coincidan.</p>
+                        <p><strong>Nota histórica:</strong> este set ya no incluye <code>run_20260717_194553</code> &mdash; era un duplicado byte a byte de <code>run_172220</code> por un error de configuración del script en el servidor, no una corrida independiente. Se retiró del análisis; <code>run_172220</code> (semilla 48) queda como la corrida de referencia.</p>
                     </li>
                     <li class="flex items-start gap-3">
                         <span class="text-slate-500 text-xl mt-0.5">📝</span>
@@ -260,7 +260,7 @@
     </div>
 
     <script>
-        // Datos reales de greedy_baseline.csv y random_failures.csv (run_20260717_194553)
+        // Datos reales de greedy_baseline.csv y random_failures.csv (run_20260717_172220)
         const comparisonData = [
             { cuts: 0, ttv: 0, method: "NSGA-II (dirigido)" },
             { cuts: 1, ttv: 4190102.66, method: "NSGA-II (dirigido)" },
@@ -362,8 +362,7 @@
             { run: "015356", label: "topn=50 pop=50 k=5 (30 gen)", first_exact: null, gens: 30, pop: 50, dup: false },
             { run: "205538", label: "topn=150 pop=50 k=5", first_exact: null, gens: 50, pop: 50, dup: false },
             { run: "200112", label: "topn=200 pop=200 k=5 (FW=35)", first_exact: 28, gens: 50, pop: 200, dup: false },
-            { run: "172220", label: "topn=100 pop=200 k=5 (= 194553)", first_exact: 17, gens: 50, pop: 200, dup: true },
-            { run: "194553", label: "topn=100 pop=200 k=5 (referencia)", first_exact: 17, gens: 50, pop: 200, dup: true }
+            { run: "172220", label: "topn=100 pop=200 k=5 (referencia)", first_exact: 17, gens: 50, pop: 200, dup: false }
         ];
 
         function renderCollapsePlot() {
@@ -422,7 +421,7 @@
         renderCollapsePlot();
 
         // ------------------------------------------------------------------
-        // Comparador de corridas: datos reales de las 17 corridas guardadas,
+        // Comparador de corridas: datos reales de las 16 corridas guardadas,
         // extraídos de metadata.json + pareto_front_by_generation.csv
         // (mejor ΔTTV por num_cortes en la última generación de cada corrida).
         // ------------------------------------------------------------------
@@ -442,11 +441,10 @@
             { run: "20260715_015356", seed: 42, k: 5, topn: 50, pop: 50, gens: 30, fw: 50, esc: "central", hv: 79823674.7542, front_size: 17, best_by_k: {"1": 1153001.03, "2": 2232938.22, "3": 24761336.79, "4": 25631351.7, "5": 26045047.0}, first_exact: null, pair_freq: {"1a Calle SO": 12, "1a Avenida SO": 12}, has_greedy: true, has_mc: true, dup_of: null },
             { run: "20260715_205538", seed: 42, k: 5, topn: 150, pop: 50, gens: 50, fw: 50, esc: "central", hv: 95245206.8255, front_size: 46, best_by_k: {"1": 4190102.66, "2": 5021942.13, "3": 27938822.94, "4": 29047169.55}, first_exact: null, pair_freq: {"1a Calle SO": 37, "1a Avenida SO": 37}, has_greedy: false, has_mc: true, dup_of: null },
             { run: "20260716_200112", seed: 42, k: 5, topn: 200, pop: 200, gens: 50, fw: 35, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 28, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: null },
-            { run: "20260717_172220", seed: 48, k: 5, topn: 100, pop: 200, gens: 50, fw: 50, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 17, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: "20260717_194553" },
-            { run: "20260717_194553", seed: 46, k: 5, topn: 100, pop: 200, gens: 50, fw: 50, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 17, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: null }
+            { run: "20260717_172220", seed: 48, k: 5, topn: 100, pop: 200, gens: 50, fw: 50, esc: "central", hv: 132223877.0652, front_size: 200, best_by_k: {"1": 4190102.66, "2": 23748720.28, "3": 27938822.94, "4": 36301372.37, "5": 40044858.81}, first_exact: 17, pair_freq: {"1a Calle SO": 197, "1a Avenida SO": 197}, has_greedy: true, has_mc: true, dup_of: null }
         ];
 
-        let selectedRuns = new Set(["20260717_194553", "20260716_200112", "20260713_022130", "20260714_184255"]);
+        let selectedRuns = new Set(["20260717_172220", "20260716_200112", "20260713_022130", "20260714_184255"]);
 
         function fmtM(v) {
             if (v === undefined || v === null) return "&mdash;";
